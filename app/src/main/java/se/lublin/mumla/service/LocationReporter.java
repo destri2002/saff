@@ -107,7 +107,9 @@ public class LocationReporter {
 
         long intervalMs = Settings.LOCATION_SEND_INTERVAL_MS;
         mScheduler = Executors.newSingleThreadScheduledExecutor();
-        mScheduledTask = mScheduler.scheduleAtFixedRate(
+        // scheduleWithFixedDelay: the next send starts intervalMs *after* the current one finishes,
+        // preventing queued tasks if a network request takes longer than the interval.
+        mScheduledTask = mScheduler.scheduleWithFixedDelay(
                 this::sendLocation, 0, intervalMs, TimeUnit.MILLISECONDS);
         Log.d(TAG, "Location reporting started, interval=" + intervalMs + "ms");
     }
