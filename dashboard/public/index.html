@@ -19,6 +19,7 @@
       color: #f3f4f6;
       display: flex;
       flex-direction: column;
+      height: 100vh;
       height: 100dvh;
     }
 
@@ -106,6 +107,44 @@
     #map {
       flex: 1;
       min-height: 0;
+      position: relative;
+    }
+
+    /* ── "Waiting for location" overlay ── */
+    #no-location-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(17, 24, 39, 0.82);
+      z-index: 1000;
+      text-align: center;
+      padding: 1rem;
+      gap: 0.75rem;
+    }
+    #no-location-overlay.hidden { display: none; }
+    #no-location-overlay p {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+    #no-location-overlay small {
+      color: #9ca3af;
+      font-size: 0.78rem;
+      max-width: 340px;
+      line-height: 1.5;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #374151;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
     }
 
     /* ── Info panel (bottom) ── */
@@ -192,7 +231,13 @@
   </div>
 </header>
 
-<div id="map"></div>
+<div id="map">
+  <div id="no-location-overlay">
+    <div class="spinner"></div>
+    <p>Waiting for location…</p>
+    <small>Make sure the Android app is connected to a Mumble server and the Dashboard URL is set to <code>http://&lt;this-server&gt;:3000/location</code></small>
+  </div>
+</div>
 
 <div id="info-panel">
   <div class="info-item">Lat: <strong id="lat">—</strong></div>
@@ -228,26 +273,27 @@
   let trackPoints = [];
   const trackLine = L.polyline([], { color: '#3b82f6', weight: 3, opacity: 0.8 }).addTo(map);
 
-  // Accuracy circle
+  // Accuracy circle — added to map only after the first real location arrives
   const accuracyCircle = L.circle([0, 0], {
     radius: 0, color: '#3b82f6', fillColor: '#3b82f6',
     fillOpacity: 0.1, weight: 1,
-  }).addTo(map);
+  });
 
-  // Latest-position marker (custom pulsing icon)
+  // Latest-position marker (custom pulsing icon) — added to map only after the first real location arrives
   const pulseIcon = L.divIcon({
     html: '<div class="pulse-ring"></div><div class="pulse-dot"></div>',
     className: 'pulse-icon',
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   });
-  const posMarker = L.marker([0, 0], { icon: pulseIcon }).addTo(map);
+  const posMarker = L.marker([0, 0], { icon: pulseIcon });
   posMarker.bindPopup('');
 
   // ── State ──────────────────────────────────────────────────────────────────
   let follow = true;
   let showTrack = true;
   let pointCount = 0;
+  let hasLocation = false; // true once the first real fix has been received
 
   // ── UI elements ───────────────────────────────────────────────────────────
   const connDot     = document.getElementById('conn-dot');
@@ -260,6 +306,7 @@
   const accFullEl   = document.getElementById('acc-full');
   const devTimeEl   = document.getElementById('dev-time');
   const srvTimeEl   = document.getElementById('srv-time');
+  const noLocationOverlay = document.getElementById('no-location-overlay');
 
   const btnFollow  = document.getElementById('btn-follow');
   const btnTrack   = document.getElementById('btn-track');
@@ -274,8 +321,16 @@
            String(d.getMilliseconds()).padStart(3, '0');
   }
 
-  function applyPoint(pt) {
+  function applyPoint(pt, skipFollow) {
     const latlng = [pt.latitude, pt.longitude];
+
+    // On the first real location: add layers to map and hide the "waiting" overlay
+    if (!hasLocation) {
+      hasLocation = true;
+      posMarker.addTo(map);
+      accuracyCircle.addTo(map);
+      noLocationOverlay.classList.add('hidden');
+    }
 
     // Move marker & accuracy circle
     posMarker.setLatLng(latlng);
@@ -292,8 +347,8 @@
       trackLine.setLatLngs(trackPoints);
     }
 
-    // Follow
-    if (follow) {
+    // Follow (skipped during batch history replay — caller will fitBounds instead)
+    if (follow && !skipFollow) {
       map.setView(latlng, Math.max(map.getZoom(), 15));
     }
 
@@ -331,14 +386,27 @@
 
   // Receive full history on (re)connection
   socket.on('history', (history) => {
-    if (!Array.isArray(history) || history.length === 0) return;
+    // Always reset client-side state on reconnect so stale data is cleared
     trackPoints = [];
     pointCount = 0;
-    history.forEach(applyPoint);
+    hasLocation = false;
+    trackLine.setLatLngs([]);
+    pointCountEl.textContent = 0;
 
-    // Fit map to the track
-    if (trackPoints.length > 0) {
+    if (map.hasLayer(posMarker)) { posMarker.remove(); }
+    if (map.hasLayer(accuracyCircle)) { accuracyCircle.remove(); }
+    noLocationOverlay.classList.remove('hidden');
+
+    if (!Array.isArray(history) || history.length === 0) return;
+
+    // Replay history without panning for each point (skipFollow=true)
+    history.forEach((pt) => applyPoint(pt, true));
+
+    // After replay, fit map to the full track or follow the last point
+    if (trackPoints.length > 1) {
       map.fitBounds(L.latLngBounds(trackPoints).pad(0.2));
+    } else if (trackPoints.length === 1 && follow) {
+      map.setView(trackPoints[0], Math.max(map.getZoom(), 15));
     }
   });
 
