@@ -164,12 +164,12 @@ public class LocationReporter {
         try {
             if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 mLocationManager.requestLocationUpdates(
-                        LocationManager.GPS_PROVIDER, 1000L, 0f,
+                        LocationManager.GPS_PROVIDER, Settings.LOCATION_SEND_INTERVAL_MS, 0f,
                         mLocationListener, Looper.getMainLooper());
             }
             if (mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 mLocationManager.requestLocationUpdates(
-                        LocationManager.NETWORK_PROVIDER, 1000L, 0f,
+                        LocationManager.NETWORK_PROVIDER, Settings.LOCATION_SEND_INTERVAL_MS, 0f,
                         mLocationListener, Looper.getMainLooper());
             }
         } catch (SecurityException e) {

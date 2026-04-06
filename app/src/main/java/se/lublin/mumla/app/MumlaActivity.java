@@ -677,7 +677,7 @@ public class MumlaActivity extends AppCompatActivity implements ListView.OnItemC
             case PERMISSIONS_REQUEST_LOCATION:
                 // Location permission is optional — location reporting won't work without it,
                 // but the Mumble connection itself should proceed regardless.
-                if (grantResults[0] == PackageManager.PERMISSION_DENIED) {
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_DENIED) {
                     Toast.makeText(MumlaActivity.this,
                             getString(R.string.grant_perm_location), Toast.LENGTH_LONG).show();
                 }
