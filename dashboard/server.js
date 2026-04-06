@@ -21,12 +21,14 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const { Server: SocketIOServer } = require('socket.io');
+const rateLimit = require('express-rate-limit');
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HISTORY_LIMIT = parseInt(process.env.HISTORY_LIMIT || '500', 10);
+
 
 // ---------------------------------------------------------------------------
 // In-memory store
@@ -59,12 +61,35 @@ app.use(express.json());
 // Serve static files from ./public (index.html, etc.)
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ---------------------------------------------------------------------------
+// Rate limiters
+// ---------------------------------------------------------------------------
+
+// Android app posts once every 5 s; allow up to 60 requests per minute per IP
+// before rejecting with 429, giving plenty of headroom for multiple devices.
+const locationLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many location updates from this IP, please slow down.' },
+});
+
+// Dashboard API: generous limit for browser polling / debugging
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many API requests, please slow down.' },
+});
+
 /**
  * POST /location
  * Receives a location update from the Android app.
  * Body: { latitude, longitude, accuracy, timestamp }
  */
-app.post('/location', (req, res) => {
+app.post('/location', locationLimiter, (req, res) => {
     const { latitude, longitude, accuracy, timestamp } = req.body;
 
     // Basic validation
@@ -97,7 +122,7 @@ app.post('/location', (req, res) => {
  * GET /api/latest
  * Returns the most recently received location, or 404 if none yet.
  */
-app.get('/api/latest', (req, res) => {
+app.get('/api/latest', apiLimiter, (req, res) => {
     if (!latestLocation) {
         return res.status(404).json({ error: 'No location received yet.' });
     }
@@ -109,7 +134,7 @@ app.get('/api/latest', (req, res) => {
  * Returns up to the last HISTORY_LIMIT location points (oldest first).
  * Query param: ?limit=N  — cap at N points (default: all history)
  */
-app.get('/api/locations', (req, res) => {
+app.get('/api/locations', apiLimiter, (req, res) => {
     const requestedLimit = parseInt(req.query.limit, 10);
     const history = Number.isFinite(requestedLimit) && requestedLimit > 0
         ? locationHistory.slice(-requestedLimit)
@@ -121,7 +146,7 @@ app.get('/api/locations', (req, res) => {
  * GET /api/status
  * Simple health-check endpoint.
  */
-app.get('/api/status', (req, res) => {
+app.get('/api/status', apiLimiter, (req, res) => {
     return res.json({
         ok: true,
         pointsInHistory: locationHistory.length,
@@ -131,7 +156,7 @@ app.get('/api/status', (req, res) => {
 });
 
 // Catch-all: serve index.html for any unknown GET (SPA-style fallback)
-app.get('*', (req, res) => {
+app.get('*', apiLimiter, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

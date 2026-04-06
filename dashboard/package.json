@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
+    "express-rate-limit": "^8.3.2",
     "socket.io": "^4.7.5"
   },
   "license": "GPL-3.0"
