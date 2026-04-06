@@ -7,7 +7,7 @@
  * and broadcasts them in real-time to browser clients via Socket.IO.
  *
  * Expected POST payload from Android:
- *   { "latitude": number, "longitude": number, "accuracy": number, "timestamp": number }
+ *   { "latitude": number, "longitude": number, "accuracy": number, "timestamp": number, "username": string (optional) }
  *
  * To configure the Android app, set the "Dashboard URL" in General Settings to:
  *   http://<server-ip>:<PORT>/location
@@ -35,7 +35,7 @@ const HISTORY_LIMIT = parseInt(process.env.HISTORY_LIMIT || '500', 10);
 // ---------------------------------------------------------------------------
 
 /**
- * @typedef {{ latitude: number, longitude: number, accuracy: number, timestamp: number, receivedAt: number }} LocationPoint
+ * @typedef {{ latitude: number, longitude: number, accuracy: number, timestamp: number, username: string|undefined, receivedAt: number }} LocationPoint
  */
 
 /** @type {LocationPoint[]} */
@@ -90,7 +90,7 @@ const apiLimiter = rateLimit({
  * Body: { latitude, longitude, accuracy, timestamp }
  */
 app.post('/location', locationLimiter, (req, res) => {
-    const { latitude, longitude, accuracy, timestamp } = req.body;
+    const { latitude, longitude, accuracy, timestamp, username } = req.body;
 
     // Basic validation
     if (
@@ -106,14 +106,19 @@ app.post('/location', locationLimiter, (req, res) => {
         return res.status(400).json({ error: 'Coordinates out of range.' });
     }
 
+    // username is optional; only include it if it's a non-empty string
+    const sanitizedUsername = (typeof username === 'string' && username.trim().length > 0)
+        ? username.trim().slice(0, 64)
+        : undefined;
+
     /** @type {LocationPoint} */
-    const point = { latitude, longitude, accuracy, timestamp, receivedAt: Date.now() };
+    const point = { latitude, longitude, accuracy, timestamp, username: sanitizedUsername, receivedAt: Date.now() };
     addLocation(point);
 
     // Broadcast to all connected dashboard clients
     io.emit('location', point);
 
-    console.log(`[${new Date().toISOString()}] Location received: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} ±${accuracy.toFixed(0)}m`);
+    console.log(`[${new Date().toISOString()}] Location received: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} ±${accuracy.toFixed(0)}m${sanitizedUsername ? ` (${sanitizedUsername})` : ''}`);
 
     return res.status(200).json({ ok: true });
 });

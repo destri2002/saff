@@ -240,6 +240,7 @@
 </div>
 
 <div id="info-panel">
+  <div class="info-item">User: <strong id="username">—</strong></div>
   <div class="info-item">Lat: <strong id="lat">—</strong></div>
   <div class="info-item">Lng: <strong id="lng">—</strong></div>
   <div class="info-item">Accuracy: <strong id="acc-full">—</strong></div>
@@ -301,6 +302,7 @@
   const lastUpdate  = document.getElementById('last-update');
   const pointCountEl= document.getElementById('point-count');
   const accuracyEl  = document.getElementById('accuracy');
+  const usernameEl  = document.getElementById('username');
   const latEl       = document.getElementById('lat');
   const lngEl       = document.getElementById('lng');
   const accFullEl   = document.getElementById('acc-full');
@@ -335,6 +337,7 @@
     // Move marker & accuracy circle
     posMarker.setLatLng(latlng);
     posMarker.getPopup().setContent(
+      `${pt.username ? `<b>${pt.username}</b><br>` : ''}` +
       `<b>${pt.latitude.toFixed(6)}, ${pt.longitude.toFixed(6)}</b><br>` +
       `Accuracy: ±${pt.accuracy.toFixed(1)} m<br>` +
       `Device: ${formatTime(pt.timestamp)}`
@@ -359,6 +362,7 @@
     accuracyEl.textContent = `±${pt.accuracy.toFixed(1)} m`;
 
     // Info panel
+    usernameEl.textContent  = pt.username || '—';
     latEl.textContent      = pt.latitude.toFixed(7);
     lngEl.textContent      = pt.longitude.toFixed(7);
     accFullEl.textContent  = `±${pt.accuracy.toFixed(2)} m`;

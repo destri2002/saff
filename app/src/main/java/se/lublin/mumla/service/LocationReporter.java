@@ -202,7 +202,8 @@ public class LocationReporter {
             return;
         }
 
-        String json = buildJson(location);
+        String username = mSettings.getDefaultUsername();
+        String json = buildJson(location, username);
         try {
             URL url = new URL(dashboardUrl);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -231,13 +232,20 @@ public class LocationReporter {
         }
     }
 
-    private static String buildJson(Location location) {
-        return "{" +
-                "\"latitude\":" + location.getLatitude() + "," +
-                "\"longitude\":" + location.getLongitude() + "," +
-                "\"accuracy\":" + location.getAccuracy() + "," +
-                "\"timestamp\":" + location.getTime() +
-                "}";
+    private static String buildJson(Location location, String username) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"latitude\":").append(location.getLatitude()).append(",");
+        sb.append("\"longitude\":").append(location.getLongitude()).append(",");
+        sb.append("\"accuracy\":").append(location.getAccuracy()).append(",");
+        sb.append("\"timestamp\":").append(location.getTime());
+        if (username != null && !username.isEmpty()) {
+            // Escape backslashes and double-quotes to produce valid JSON.
+            String escaped = username.replace("\\", "\\\\").replace("\"", "\\\"");
+            sb.append(",\"username\":\"").append(escaped).append("\"");
+        }
+        sb.append("}");
+        return sb.toString();
     }
 
     private static Location bestLocation(Location a, Location b) {
