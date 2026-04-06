@@ -147,12 +147,7 @@ app.post('/location', locationLimiter, (req, res) => {
     return res.status(200).json({ ok: true });
 });
 
-/**
- * POST /report
- * Receives one report row.
- * Body: { timestamp, districtCity, category, amount, description }
- */
-app.post('/report', reportLimiter, (req, res) => {
+function handleReportPost(req, res) {
     const { timestamp, districtCity, category, amount, description } = req.body || {};
 
     if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp <= 0) {
@@ -185,7 +180,16 @@ app.post('/report', reportLimiter, (req, res) => {
     io.emit('report', report);
 
     return res.status(200).json({ ok: true, report });
-});
+}
+
+/**
+ * POST /report
+ * POST /api/report
+ * Receives one report row.
+ * Body: { timestamp, districtCity, category, amount, description }
+ */
+app.post('/report', reportLimiter, handleReportPost);
+app.post('/api/report', reportLimiter, handleReportPost);
 
 /**
  * GET /api/latest
@@ -271,6 +275,7 @@ server.listen(PORT, () => {
     console.log(`Saff Location Dashboard running on http://0.0.0.0:${PORT}`);
     console.log(`  POST /location       — Android app endpoint`);
     console.log(`  POST /report         — Report row endpoint`);
+    console.log(`  POST /api/report     — Report row endpoint (alias)`);
     console.log(`  GET  /               — Live map dashboard`);
     console.log(`  GET  /api/latest     — Latest location (JSON)`);
     console.log(`  GET  /api/locations  — Location history (JSON)`);
