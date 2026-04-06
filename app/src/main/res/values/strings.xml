@@ -169,8 +169,9 @@
     <string name="report_category">Category</string>
     <string name="report_amount">Amount</string>
     <string name="report_description">Description</string>
+    <string name="report_api_url">Report API URL (e.g. http://server:3000/report)</string>
     <string name="report_submit">Submit</string>
-    <string name="report_missing_dashboard_url">Dashboard URL is not configured in Settings.</string>
+    <string name="report_missing_dashboard_url">Report API URL is required.</string>
     <string name="report_invalid_fields">Please fill all report fields with a valid non-negative amount.</string>
     <string name="report_sent_success">Report sent.</string>
     <string name="report_sent_failed">Failed to send report.</string>

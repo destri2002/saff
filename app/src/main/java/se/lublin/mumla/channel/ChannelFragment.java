@@ -74,6 +74,7 @@ import se.lublin.mumla.util.HumlaServiceFragment;
 public class ChannelFragment extends HumlaServiceFragment implements SharedPreferences.OnSharedPreferenceChangeListener, ChatTargetProvider {
     private static final String TAG = ChannelFragment.class.getName();
     private static final ExecutorService REPORT_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final String PREF_LOCAL_REPORT_API_URL = "channel_report_api_url";
 
     private ViewPager mViewPager;
     private PagerTabStrip mTabStrip;
@@ -262,33 +263,44 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
     private void showCreateReportDialog() {
         if (getActivity() == null) return;
 
-        String dashboardUrl = Settings.getInstance(getActivity()).getDashboardUrl();
-        if (dashboardUrl == null || dashboardUrl.trim().isEmpty()) {
-            Toast.makeText(getActivity(), R.string.report_missing_dashboard_url, Toast.LENGTH_LONG).show();
-            return;
-        }
-
         View dialogView = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_create_report, null);
+        final EditText reportApiUrlField = dialogView.findViewById(R.id.report_api_url);
         final EditText districtCityField = dialogView.findViewById(R.id.report_district_city);
         final EditText categoryField = dialogView.findViewById(R.id.report_category);
         final EditText amountField = dialogView.findViewById(R.id.report_amount);
         final EditText descriptionField = dialogView.findViewById(R.id.report_description);
+        reportApiUrlField.setText(getInitialReportApiUrl());
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(getActivity())
                 .setTitle(R.string.create_report_title)
                 .setView(dialogView)
                 .setPositiveButton(R.string.report_submit, (dialog, which) -> {
+                    String reportApiUrl = reportApiUrlField.getText().toString().trim();
                     String districtCity = districtCityField.getText().toString().trim();
                     String category = categoryField.getText().toString().trim();
                     String amountText = amountField.getText().toString().trim();
                     String description = descriptionField.getText().toString().trim();
-                    submitReport(dashboardUrl, districtCity, category, amountText, description);
+                    submitReport(reportApiUrl, districtCity, category, amountText, description);
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
-    private void submitReport(String dashboardUrl, String districtCity, String category, String amountText, String description) {
+    private String getInitialReportApiUrl() {
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String localReportUrl = preferences.getString(PREF_LOCAL_REPORT_API_URL, "");
+        if (localReportUrl != null && !localReportUrl.trim().isEmpty()) {
+            return localReportUrl.trim();
+        }
+        String dashboardUrl = Settings.getInstance(getActivity()).getDashboardUrl();
+        return deriveReportUrl(dashboardUrl);
+    }
+
+    private void submitReport(String reportApiUrl, String districtCity, String category, String amountText, String description) {
+        if (reportApiUrl.isEmpty()) {
+            Toast.makeText(getActivity(), R.string.report_missing_dashboard_url, Toast.LENGTH_LONG).show();
+            return;
+        }
         if (districtCity.isEmpty() || category.isEmpty() || amountText.isEmpty() || description.isEmpty()) {
             Toast.makeText(getActivity(), R.string.report_invalid_fields, Toast.LENGTH_LONG).show();
             return;
@@ -306,7 +318,15 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
             return;
         }
 
-        final String reportUrl = deriveReportUrl(dashboardUrl);
+        final String reportUrl = normalizeReportUrl(reportApiUrl);
+        if (reportUrl.isEmpty()) {
+            Toast.makeText(getActivity(), R.string.report_missing_dashboard_url, Toast.LENGTH_LONG).show();
+            return;
+        }
+        PreferenceManager.getDefaultSharedPreferences(getActivity())
+                .edit()
+                .putString(PREF_LOCAL_REPORT_API_URL, reportUrl)
+                .apply();
         final long timestamp = System.currentTimeMillis();
         final String json = buildReportJson(timestamp, districtCity, category, amount, description);
 
@@ -353,6 +373,23 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         }
         if (trimmed.endsWith("/location/")) {
             return trimmed.substring(0, trimmed.length() - "/location/".length()) + "/report";
+        }
+        if (trimmed.endsWith("/")) {
+            return trimmed + "report";
+        }
+        return trimmed + "/report";
+    }
+
+    private static String normalizeReportUrl(String reportApiUrl) {
+        String trimmed = reportApiUrl == null ? "" : reportApiUrl.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        if (trimmed.endsWith("/report")) {
+            return trimmed;
+        }
+        if (trimmed.endsWith("/location") || trimmed.endsWith("/location/")) {
+            return deriveReportUrl(trimmed);
         }
         if (trimmed.endsWith("/")) {
             return trimmed + "report";
