@@ -60,6 +60,8 @@ import se.lublin.mumla.Settings;
  */
 public class LocationReporter {
     private static final String TAG = LocationReporter.class.getSimpleName();
+    private static final String REPORT_CATEGORY_LOCATION_UPDATE = "Location Update";
+    private static final String REPORT_DISTRICT_CITY_UNKNOWN = "Unknown";
 
     private final Context mContext;
     private final Settings mSettings;
@@ -259,7 +261,7 @@ public class LocationReporter {
 
     private String buildReportJson(Location location, String username) {
         String districtCity = resolveDistrictCity(location);
-        String category = "Location Update";
+        String category = REPORT_CATEGORY_LOCATION_UPDATE;
         // Keep amount numeric and useful in report table: we use GPS accuracy in meters.
         double amount = Math.max(0d, location.getAccuracy());
 
@@ -311,7 +313,7 @@ public class LocationReporter {
         if (provider != null && !provider.trim().isEmpty()) {
             return provider.trim();
         }
-        return "Unknown";
+        return REPORT_DISTRICT_CITY_UNKNOWN;
     }
 
     private static String firstNonEmpty(String... values) {
