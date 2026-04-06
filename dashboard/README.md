@@ -68,6 +68,7 @@ Navigate to **http://\<server-ip\>:3000** in any browser.
 |-----------------|---------|------------------------------------------------|
 | `PORT`          | `3000`  | TCP port the server listens on                 |
 | `HISTORY_LIMIT` | `500`   | Maximum location points kept in memory         |
+| `REPORT_HISTORY_LIMIT` | `500` | Maximum report rows kept in memory       |
 
 Example — listen on port 8080 and keep 1000 points:
 

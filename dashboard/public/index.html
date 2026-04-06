@@ -327,7 +327,7 @@
   <div id="no-location-overlay">
     <div class="spinner"></div>
     <p>Waiting for location…</p>
-    <small>Make sure the Android app is connected to a Mumble server and the Dashboard URL is set to <code>http://&lt;this-server&gt;:3000/location</code></small>
+    <small>Make sure the Android app is connected to a Mumble server and the Dashboard URL is set to <code><span id="location-endpoint-example"></span></code></small>
   </div>
 </div>
 
@@ -452,6 +452,7 @@
   const reportSubmit = document.getElementById('report-submit');
   const reportStatus = document.getElementById('report-status');
   const reportTableBody = document.getElementById('report-table-body');
+  const locationEndpointExample = document.getElementById('location-endpoint-example');
 
   const btnFollow  = document.getElementById('btn-follow');
   const btnTrack   = document.getElementById('btn-track');
@@ -685,7 +686,6 @@
       setReportStatus('Report sent.', 'success');
       reportDescription.value = '';
       reportAmount.value = '';
-      reportTimestamp.value = toLocalDateTimeInputValue(Date.now());
     } catch (error) {
       setReportStatus(`Failed to send report: ${error.message}`, 'error');
     } finally {
@@ -694,6 +694,8 @@
   });
 
   reportTimestamp.value = toLocalDateTimeInputValue(Date.now());
+  locationEndpointExample.textContent = `${window.location.origin}/location`;
+  setReportStatus('Tip: adjust timestamp before sending if this is a past event.');
 
 }());
 </script>
