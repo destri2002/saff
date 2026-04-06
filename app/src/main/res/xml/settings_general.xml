@@ -83,4 +83,12 @@
         android:summary="@string/pref_start_upIn_pinned_mode_sum"
         android:title="@string/pref_start_up_in_pinned_mode"
         app:iconSpaceReserved="false" />
+
+    <EditTextPreference
+        android:key="dashboardUrl"
+        android:title="@string/pref_dashboard_url"
+        android:summary="@string/pref_dashboard_url_sum"
+        android:defaultValue=""
+        android:inputType="textUri"
+        app:iconSpaceReserved="false" />
 </PreferenceScreen>

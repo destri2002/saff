@@ -155,6 +155,16 @@ public class Settings {
 
     public static final String PREF_NEWS_SHOWN_VERSIONS = "newsShownVersions";
 
+    /** Preference key for the Node.js dashboard endpoint that receives location updates. */
+    public static final String PREF_DASHBOARD_URL = "dashboardUrl";
+    public static final String DEFAULT_DASHBOARD_URL = "";
+
+    /**
+     * Interval in milliseconds between periodic location updates sent to the dashboard.
+     * Default is 5000 ms (5 seconds).  Change this constant to adjust the sending frequency.
+     */
+    public static final long LOCATION_SEND_INTERVAL_MS = 5000L;
+
     static {
         ARRAY_INPUT_METHODS = new HashSet<String>();
         ARRAY_INPUT_METHODS.add(ARRAY_INPUT_METHOD_VOICE);
@@ -406,6 +416,14 @@ public class Settings {
 
     public void resetNewsShownVersion() {
         preferences.edit().putStringSet(PREF_NEWS_SHOWN_VERSIONS, new HashSet<>()).apply();
+    }
+
+    /**
+     * Returns the Node.js dashboard URL to which location updates are posted.
+     * An empty string means location reporting is disabled.
+     */
+    public String getDashboardUrl() {
+        return preferences.getString(PREF_DASHBOARD_URL, DEFAULT_DASHBOARD_URL);
     }
 
 }
