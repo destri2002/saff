@@ -185,6 +185,7 @@ function handleReportPost(req, res) {
 /**
  * POST /report
  * POST /api/report
+ * Both endpoints are aliases and handled by the same logic.
  * Receives one report row.
  * Body: { timestamp, districtCity, category, amount, description }
  */
