@@ -20,6 +20,8 @@ package se.lublin.mumla.channel;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
@@ -30,8 +32,10 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
@@ -42,6 +46,13 @@ import androidx.viewpager.widget.ViewPager;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.io.OutputStream;
 
 import se.lublin.humla.HumlaService;
 import se.lublin.humla.IHumlaService;
@@ -62,6 +73,7 @@ import se.lublin.mumla.util.HumlaServiceFragment;
  */
 public class ChannelFragment extends HumlaServiceFragment implements SharedPreferences.OnSharedPreferenceChangeListener, ChatTargetProvider {
     private static final String TAG = ChannelFragment.class.getName();
+    private static final ExecutorService REPORT_EXECUTOR = Executors.newSingleThreadExecutor();
 
     private ViewPager mViewPager;
     private PagerTabStrip mTabStrip;
@@ -240,8 +252,129 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         } else if (itemId == R.id.menu_input_continuous) {
             settings.setInputMethod(Settings.ARRAY_INPUT_METHOD_CONTINUOUS);
             return true;
+        } else if (itemId == R.id.menu_create_report) {
+            showCreateReportDialog();
+            return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void showCreateReportDialog() {
+        if (getActivity() == null) return;
+
+        String dashboardUrl = Settings.getInstance(getActivity()).getDashboardUrl();
+        if (dashboardUrl == null || dashboardUrl.trim().isEmpty()) {
+            Toast.makeText(getActivity(), R.string.report_missing_dashboard_url, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        View dialogView = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_create_report, null);
+        final EditText districtCityField = dialogView.findViewById(R.id.report_district_city);
+        final EditText categoryField = dialogView.findViewById(R.id.report_category);
+        final EditText amountField = dialogView.findViewById(R.id.report_amount);
+        final EditText descriptionField = dialogView.findViewById(R.id.report_description);
+
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(getActivity())
+                .setTitle(R.string.create_report_title)
+                .setView(dialogView)
+                .setPositiveButton(R.string.report_submit, (dialog, which) -> {
+                    String districtCity = districtCityField.getText().toString().trim();
+                    String category = categoryField.getText().toString().trim();
+                    String amountText = amountField.getText().toString().trim();
+                    String description = descriptionField.getText().toString().trim();
+                    submitReport(dashboardUrl, districtCity, category, amountText, description);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void submitReport(String dashboardUrl, String districtCity, String category, String amountText, String description) {
+        if (districtCity.isEmpty() || category.isEmpty() || amountText.isEmpty() || description.isEmpty()) {
+            Toast.makeText(getActivity(), R.string.report_invalid_fields, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        final double amount;
+        try {
+            amount = Double.parseDouble(amountText);
+        } catch (NumberFormatException e) {
+            Toast.makeText(getActivity(), R.string.report_invalid_fields, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (amount < 0) {
+            Toast.makeText(getActivity(), R.string.report_invalid_fields, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        final String reportUrl = deriveReportUrl(dashboardUrl);
+        final long timestamp = System.currentTimeMillis();
+        final String json = buildReportJson(timestamp, districtCity, category, amount, description);
+
+        REPORT_EXECUTOR.execute(() -> {
+            boolean success = postReport(reportUrl, json);
+            Handler main = new Handler(Looper.getMainLooper());
+            main.post(() -> {
+                if (getActivity() == null) return;
+                Toast.makeText(getActivity(), success ? R.string.report_sent_success : R.string.report_sent_failed, Toast.LENGTH_LONG).show();
+            });
+        });
+    }
+
+    private boolean postReport(String reportUrl, String json) {
+        try {
+            URL url = new URL(reportUrl);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            try {
+                connection.setRequestMethod("POST");
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setDoOutput(true);
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+                byte[] body = json.getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(body.length);
+                try (OutputStream os = connection.getOutputStream()) {
+                    os.write(body);
+                }
+                int response = connection.getResponseCode();
+                return response >= 200 && response < 300;
+            } finally {
+                connection.disconnect();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to send report: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static String deriveReportUrl(String dashboardUrl) {
+        String trimmed = dashboardUrl == null ? "" : dashboardUrl.trim();
+        if (trimmed.endsWith("/location")) {
+            return trimmed.substring(0, trimmed.length() - "/location".length()) + "/report";
+        }
+        if (trimmed.endsWith("/location/")) {
+            return trimmed.substring(0, trimmed.length() - "/location/".length()) + "/report";
+        }
+        if (trimmed.endsWith("/")) {
+            return trimmed + "report";
+        }
+        return trimmed + "/report";
+    }
+
+    private static String buildReportJson(long timestamp, String districtCity, String category, double amount, String description) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"timestamp\":").append(timestamp).append(",");
+        sb.append("\"districtCity\":\"").append(escapeJson(districtCity)).append("\",");
+        sb.append("\"category\":\"").append(escapeJson(category)).append("\",");
+        sb.append("\"amount\":").append(String.format(Locale.US, "%.3f", amount)).append(",");
+        sb.append("\"description\":\"").append(escapeJson(description)).append("\"");
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     @Override
