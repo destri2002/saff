@@ -17,3 +17,6 @@ local.properties
 
 # Java
 *.class
+
+# Node.js
+dashboard/node_modules/
