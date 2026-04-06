@@ -56,6 +56,9 @@ Replace `<your-server-ip>` with the LAN IP or public hostname of the machine
 running this server.  The app will start posting location every **5 seconds**
 once it connects to a Mumble server.
 
+When this URL is set, the Android app also posts report rows directly to
+`/report` at the same server.
+
 ### 4 — Open the dashboard
 
 Navigate to **http://\<server-ip\>:3000** in any browser.

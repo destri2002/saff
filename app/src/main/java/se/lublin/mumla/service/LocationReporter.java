@@ -20,6 +20,8 @@ package se.lublin.mumla.service;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.location.Address;
+import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -33,6 +35,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -203,36 +207,43 @@ public class LocationReporter {
         }
 
         String username = mSettings.getDefaultUsername();
-        String json = buildJson(location, username);
+        String locationJson = buildLocationJson(location, username);
+        String reportJson = buildReportJson(location, username);
+        String reportUrl = deriveReportUrl(dashboardUrl);
         try {
-            URL url = new URL(dashboardUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            try {
-                connection.setRequestMethod("POST");
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setDoOutput(true);
-                connection.setConnectTimeout(5000);
-                connection.setReadTimeout(5000);
-
-                byte[] body = json.getBytes(StandardCharsets.UTF_8);
-                connection.setFixedLengthStreamingMode(body.length);
-                try (OutputStream os = connection.getOutputStream()) {
-                    os.write(body);
-                }
-
-                int responseCode = connection.getResponseCode();
-                if (responseCode < 200 || responseCode >= 300) {
-                    Log.w(TAG, "Dashboard responded with HTTP " + responseCode);
-                }
-            } finally {
-                connection.disconnect();
-            }
+            postJson(dashboardUrl, locationJson, "location");
+            postJson(reportUrl, reportJson, "report");
         } catch (Exception e) {
             Log.w(TAG, "Failed to send location to dashboard: " + e.getMessage());
         }
     }
 
-    private static String buildJson(Location location, String username) {
+    private void postJson(String endpointUrl, String json, String kind) throws Exception {
+        URL url = new URL(endpointUrl);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        try {
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+
+            byte[] body = json.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(body.length);
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(body);
+            }
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode < 200 || responseCode >= 300) {
+                Log.w(TAG, "Dashboard " + kind + " endpoint responded with HTTP " + responseCode);
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static String buildLocationJson(Location location, String username) {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         sb.append("\"latitude\":").append(location.getLatitude()).append(",");
@@ -240,12 +251,96 @@ public class LocationReporter {
         sb.append("\"accuracy\":").append(location.getAccuracy()).append(",");
         sb.append("\"timestamp\":").append(location.getTime());
         if (username != null && !username.isEmpty()) {
-            // Escape backslashes and double-quotes to produce valid JSON.
-            String escaped = username.replace("\\", "\\\\").replace("\"", "\\\"");
-            sb.append(",\"username\":\"").append(escaped).append("\"");
+            sb.append(",\"username\":\"").append(escapeJson(username)).append("\"");
         }
         sb.append("}");
         return sb.toString();
+    }
+
+    private String buildReportJson(Location location, String username) {
+        String districtCity = resolveDistrictCity(location);
+        String category = "Location Update";
+        // Keep amount numeric and useful in report table: we use GPS accuracy in meters.
+        double amount = Math.max(0d, location.getAccuracy());
+
+        StringBuilder description = new StringBuilder();
+        if (username != null && !username.isEmpty()) {
+            description.append(username.trim()).append(" ");
+        }
+        description.append("at ")
+                .append(String.format(Locale.US, "%.6f", location.getLatitude()))
+                .append(", ")
+                .append(String.format(Locale.US, "%.6f", location.getLongitude()))
+                .append(" ±")
+                .append(String.format(Locale.US, "%.1f", location.getAccuracy()))
+                .append("m");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"timestamp\":").append(location.getTime()).append(",");
+        sb.append("\"districtCity\":\"").append(escapeJson(districtCity)).append("\",");
+        sb.append("\"category\":\"").append(escapeJson(category)).append("\",");
+        sb.append("\"amount\":").append(amount).append(",");
+        sb.append("\"description\":\"").append(escapeJson(description.toString())).append("\"");
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private String resolveDistrictCity(Location location) {
+        try {
+            if (Geocoder.isPresent()) {
+                Geocoder geocoder = new Geocoder(mContext, Locale.getDefault());
+                List<Address> addresses = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
+                if (addresses != null && !addresses.isEmpty()) {
+                    Address a = addresses.get(0);
+                    String district = firstNonEmpty(a.getSubAdminArea(), a.getLocality(), a.getAdminArea());
+                    String city = firstNonEmpty(a.getLocality(), a.getSubAdminArea(), a.getAdminArea(), a.getCountryName());
+                    if (district != null && city != null && !district.equalsIgnoreCase(city)) {
+                        return (district + "/" + city).trim();
+                    }
+                    if (city != null) {
+                        return city.trim();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "Could not reverse geocode district/city: " + e.getMessage());
+        }
+
+        String provider = location.getProvider();
+        if (provider != null && !provider.trim().isEmpty()) {
+            return provider.trim();
+        }
+        return "Unknown";
+    }
+
+    private static String firstNonEmpty(String... values) {
+        if (values == null) return null;
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private static String deriveReportUrl(String dashboardUrl) {
+        String trimmed = dashboardUrl.trim();
+        if (trimmed.endsWith("/location")) {
+            return trimmed.substring(0, trimmed.length() - "/location".length()) + "/report";
+        }
+        if (trimmed.endsWith("/location/")) {
+            return trimmed.substring(0, trimmed.length() - "/location/".length()) + "/report";
+        }
+        if (trimmed.endsWith("/")) {
+            return trimmed + "report";
+        }
+        return trimmed + "/report";
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static Location bestLocation(Location a, Location b) {
