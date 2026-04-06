@@ -162,6 +162,98 @@
     .info-item { color: #9ca3af; }
     .info-item strong { color: #e5e7eb; }
 
+    /* ── Report panel ── */
+    #report-panel {
+      padding: 0.75rem 1rem 1rem;
+      background: #111827;
+      border-top: 1px solid #374151;
+      display: grid;
+      gap: 0.75rem;
+      flex-shrink: 0;
+      max-height: 45vh;
+      overflow: auto;
+    }
+    #report-panel h2 {
+      margin: 0;
+      font-size: 0.95rem;
+      color: #93c5fd;
+    }
+    #report-form {
+      display: grid;
+      gap: 0.5rem;
+      grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+      align-items: end;
+    }
+    #report-form .field {
+      display: grid;
+      gap: 0.2rem;
+    }
+    #report-form label {
+      font-size: 0.72rem;
+      color: #9ca3af;
+    }
+    #report-form input {
+      width: 100%;
+      border: 1px solid #4b5563;
+      border-radius: 6px;
+      background: #1f2937;
+      color: #f3f4f6;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.8rem;
+    }
+    #report-submit {
+      align-self: stretch;
+      min-width: 110px;
+    }
+    #report-submit:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    #report-status {
+      min-height: 1.1rem;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+    #report-status.error { color: #fca5a5; }
+    #report-status.success { color: #86efac; }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      background: #0f172a;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+    th, td {
+      text-align: left;
+      font-size: 0.78rem;
+      padding: 0.45rem 0.55rem;
+      border-bottom: 1px solid #1f2937;
+      vertical-align: top;
+      color: #e5e7eb;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #1f2937;
+      color: #93c5fd;
+      z-index: 1;
+    }
+    td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    td.amount { text-align: right; }
+
+    @media (max-width: 1024px) {
+      #report-form {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+      }
+      #report-submit {
+        grid-column: span 2;
+      }
+    }
+
     /* ── Leaflet popup dark style ── */
     .leaflet-popup-content-wrapper {
       background: #1f2937;
@@ -248,6 +340,48 @@
   <div class="info-item">Server time: <strong id="srv-time">—</strong></div>
 </div>
 
+<section id="report-panel">
+  <h2>Reports</h2>
+  <form id="report-form">
+    <div class="field">
+      <label for="report-timestamp">Timestamp</label>
+      <input id="report-timestamp" type="datetime-local" required />
+    </div>
+    <div class="field">
+      <label for="report-district-city">District/City</label>
+      <input id="report-district-city" type="text" maxlength="120" required />
+    </div>
+    <div class="field">
+      <label for="report-category">Category</label>
+      <input id="report-category" type="text" maxlength="80" required />
+    </div>
+    <div class="field">
+      <label for="report-amount">Amount</label>
+      <input id="report-amount" type="number" min="0" step="0.01" required />
+    </div>
+    <div class="field">
+      <label for="report-description">Description</label>
+      <input id="report-description" type="text" maxlength="500" required />
+    </div>
+    <button id="report-submit" type="submit">Send report</button>
+  </form>
+  <div id="report-status"></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>District/City</th>
+          <th>Category</th>
+          <th>Amount</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody id="report-table-body"></tbody>
+    </table>
+  </div>
+</section>
+
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLI=" crossorigin=""></script>
@@ -309,6 +443,15 @@
   const devTimeEl   = document.getElementById('dev-time');
   const srvTimeEl   = document.getElementById('srv-time');
   const noLocationOverlay = document.getElementById('no-location-overlay');
+  const reportForm = document.getElementById('report-form');
+  const reportTimestamp = document.getElementById('report-timestamp');
+  const reportDistrictCity = document.getElementById('report-district-city');
+  const reportCategory = document.getElementById('report-category');
+  const reportAmount = document.getElementById('report-amount');
+  const reportDescription = document.getElementById('report-description');
+  const reportSubmit = document.getElementById('report-submit');
+  const reportStatus = document.getElementById('report-status');
+  const reportTableBody = document.getElementById('report-table-body');
 
   const btnFollow  = document.getElementById('btn-follow');
   const btnTrack   = document.getElementById('btn-track');
@@ -321,6 +464,55 @@
     const d = new Date(ms);
     return d.toLocaleTimeString([], { hour12: false }) + '.' +
            String(d.getMilliseconds()).padStart(3, '0');
+  }
+
+  function formatDateTime(ms) {
+    if (!ms) return '—';
+    const d = new Date(ms);
+    return d.toLocaleString([], { hour12: false });
+  }
+
+  function setReportStatus(text, kind) {
+    reportStatus.textContent = text || '';
+    reportStatus.classList.remove('error', 'success');
+    if (kind) reportStatus.classList.add(kind);
+  }
+
+  function toLocalDateTimeInputValue(ms) {
+    const d = new Date(ms);
+    const pad = (v) => String(v).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function renderReportRow(report, prepend) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${escapeHtml(formatDateTime(report.timestamp))}</td>
+      <td>${escapeHtml(report.districtCity)}</td>
+      <td>${escapeHtml(report.category)}</td>
+      <td class="amount mono">${escapeHtml(Number(report.amount).toFixed(2))}</td>
+      <td>${escapeHtml(report.description)}</td>
+    `;
+    if (prepend) {
+      reportTableBody.prepend(tr);
+    } else {
+      reportTableBody.appendChild(tr);
+    }
+  }
+
+  function renderReportHistory(history) {
+    reportTableBody.textContent = '';
+    if (!Array.isArray(history)) return;
+    history.forEach((report) => renderReportRow(report, false));
   }
 
   function applyPoint(pt, skipFollow) {
@@ -419,6 +611,14 @@
     applyPoint(pt);
   });
 
+  socket.on('reportHistory', (history) => {
+    renderReportHistory(history);
+  });
+
+  socket.on('report', (report) => {
+    renderReportRow(report, true);
+  });
+
   // ── Button handlers ────────────────────────────────────────────────────────
   btnFollow.addEventListener('click', () => {
     follow = !follow;
@@ -448,6 +648,52 @@
     pointCount = 0;
     pointCountEl.textContent = 0;
   });
+
+  reportForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setReportStatus('');
+
+    const timestampValue = reportTimestamp.value;
+    const timestamp = timestampValue ? new Date(timestampValue).getTime() : NaN;
+    const districtCity = reportDistrictCity.value.trim();
+    const category = reportCategory.value.trim();
+    const amount = Number(reportAmount.value);
+    const description = reportDescription.value.trim();
+
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      setReportStatus('Please provide a valid timestamp.', 'error');
+      return;
+    }
+    if (!districtCity || !category || !description || !Number.isFinite(amount) || amount < 0) {
+      setReportStatus('Please fill all fields with valid values.', 'error');
+      return;
+    }
+
+    reportSubmit.disabled = true;
+    try {
+      const response = await fetch('/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timestamp, districtCity, category, amount, description }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.error || `HTTP ${response.status}`);
+      }
+
+      setReportStatus('Report sent.', 'success');
+      reportDescription.value = '';
+      reportAmount.value = '';
+      reportTimestamp.value = toLocalDateTimeInputValue(Date.now());
+    } catch (error) {
+      setReportStatus(`Failed to send report: ${error.message}`, 'error');
+    } finally {
+      reportSubmit.disabled = false;
+    }
+  });
+
+  reportTimestamp.value = toLocalDateTimeInputValue(Date.now());
 
 }());
 </script>

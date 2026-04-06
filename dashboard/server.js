@@ -28,6 +28,7 @@ const rateLimit = require('express-rate-limit');
 // ---------------------------------------------------------------------------
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HISTORY_LIMIT = parseInt(process.env.HISTORY_LIMIT || '500', 10);
+const REPORT_HISTORY_LIMIT = parseInt(process.env.REPORT_HISTORY_LIMIT || '500', 10);
 
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,20 @@ function addLocation(point) {
         locationHistory.shift();
     }
     latestLocation = point;
+}
+
+/**
+ * @typedef {{ timestamp: number, districtCity: string, category: string, amount: number, description: string, receivedAt: number }} ReportRow
+ */
+
+/** @type {ReportRow[]} */
+const reportHistory = [];
+
+function addReport(report) {
+    reportHistory.push(report);
+    if (reportHistory.length > REPORT_HISTORY_LIMIT) {
+        reportHistory.shift();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +97,15 @@ const apiLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many API requests, please slow down.' },
+});
+
+// Report submissions from UI/users.
+const reportLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many report submissions from this IP, please slow down.' },
 });
 
 /**
@@ -124,6 +148,46 @@ app.post('/location', locationLimiter, (req, res) => {
 });
 
 /**
+ * POST /report
+ * Receives one report row.
+ * Body: { timestamp, districtCity, category, amount, description }
+ */
+app.post('/report', reportLimiter, (req, res) => {
+    const { timestamp, districtCity, category, amount, description } = req.body || {};
+
+    if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp <= 0) {
+        return res.status(400).json({ error: 'Invalid timestamp. Expected a positive number (epoch ms).' });
+    }
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
+        return res.status(400).json({ error: 'Invalid amount. Expected a non-negative number.' });
+    }
+    if (typeof districtCity !== 'string' || districtCity.trim().length === 0) {
+        return res.status(400).json({ error: 'Invalid district/city. Expected a non-empty string.' });
+    }
+    if (typeof category !== 'string' || category.trim().length === 0) {
+        return res.status(400).json({ error: 'Invalid category. Expected a non-empty string.' });
+    }
+    if (typeof description !== 'string' || description.trim().length === 0) {
+        return res.status(400).json({ error: 'Invalid description. Expected a non-empty string.' });
+    }
+
+    /** @type {ReportRow} */
+    const report = {
+        timestamp,
+        districtCity: districtCity.trim().slice(0, 120),
+        category: category.trim().slice(0, 80),
+        amount,
+        description: description.trim().slice(0, 500),
+        receivedAt: Date.now(),
+    };
+    addReport(report);
+
+    io.emit('report', report);
+
+    return res.status(200).json({ ok: true, report });
+});
+
+/**
  * GET /api/latest
  * Returns the most recently received location, or 404 if none yet.
  */
@@ -148,6 +212,19 @@ app.get('/api/locations', apiLimiter, (req, res) => {
 });
 
 /**
+ * GET /api/reports
+ * Returns report history (oldest first).
+ * Query param: ?limit=N
+ */
+app.get('/api/reports', apiLimiter, (req, res) => {
+    const requestedLimit = parseInt(req.query.limit, 10);
+    const history = Number.isFinite(requestedLimit) && requestedLimit > 0
+        ? reportHistory.slice(-requestedLimit)
+        : reportHistory.slice();
+    return res.json(history);
+});
+
+/**
  * GET /api/status
  * Simple health-check endpoint.
  */
@@ -155,7 +232,9 @@ app.get('/api/status', apiLimiter, (req, res) => {
     return res.json({
         ok: true,
         pointsInHistory: locationHistory.length,
+        reportsInHistory: reportHistory.length,
         historyLimit: HISTORY_LIMIT,
+        reportHistoryLimit: REPORT_HISTORY_LIMIT,
         latestReceivedAt: latestLocation ? latestLocation.receivedAt : null,
     });
 });
@@ -178,6 +257,7 @@ io.on('connection', (socket) => {
 
     // Send the current history so the newly connected client can draw the full track
     socket.emit('history', locationHistory.slice());
+    socket.emit('reportHistory', reportHistory.slice());
 
     socket.on('disconnect', () => {
         console.log(`[${new Date().toISOString()}] Dashboard client disconnected (id=${socket.id})`);
@@ -190,8 +270,10 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
     console.log(`Saff Location Dashboard running on http://0.0.0.0:${PORT}`);
     console.log(`  POST /location       — Android app endpoint`);
+    console.log(`  POST /report         — Report row endpoint`);
     console.log(`  GET  /               — Live map dashboard`);
     console.log(`  GET  /api/latest     — Latest location (JSON)`);
     console.log(`  GET  /api/locations  — Location history (JSON)`);
+    console.log(`  GET  /api/reports    — Report history (JSON)`);
     console.log(`  GET  /api/status     — Health check`);
 });

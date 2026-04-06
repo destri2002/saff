@@ -15,10 +15,12 @@ Android app (LocationReporter.java)
         ▼
 Node.js server (server.js)
         │
-        ├── stores point in memory (ring buffer, 500 points)
+        ├── stores location points in memory (ring buffer, 500 points)
+        ├── stores report rows in memory (ring buffer, 500 rows)
         │
         └── broadcasts via Socket.IO ──► Browser dashboard (index.html)
-                                               └── Leaflet map, live updates
+                                               ├── Leaflet map, live updates
+                                               └── Report form + report table
 ```
 
 ---
@@ -80,9 +82,11 @@ PORT=8080 HISTORY_LIMIT=1000 npm start
 | Method | Path               | Description                                         |
 |--------|--------------------|-----------------------------------------------------|
 | `POST` | `/location`        | Receive a location update from the Android app      |
+| `POST` | `/report`          | Receive a report row                                |
 | `GET`  | `/`                | Serve the live map dashboard                        |
 | `GET`  | `/api/latest`      | Return the most recently received point (JSON)      |
 | `GET`  | `/api/locations`   | Return location history array (JSON); `?limit=N`    |
+| `GET`  | `/api/reports`     | Return report history array (JSON); `?limit=N`      |
 | `GET`  | `/api/status`      | Health check / stats                                |
 
 ### POST `/location` payload
@@ -105,6 +109,33 @@ PORT=8080 HISTORY_LIMIT=1000 npm start
 ]
 ```
 
+### POST `/report` payload
+
+```json
+{
+  "timestamp": 1712394000000,
+  "districtCity": "South Jakarta",
+  "category": "Food",
+  "amount": 120000,
+  "description": "Dinner supplies"
+}
+```
+
+### GET `/api/reports` response
+
+```json
+[
+  {
+    "timestamp": 1712394000000,
+    "districtCity": "South Jakarta",
+    "category": "Food",
+    "amount": 120000,
+    "description": "Dinner supplies",
+    "receivedAt": 1712394000123
+  }
+]
+```
+
 ---
 
 ## Dashboard features
@@ -117,6 +148,12 @@ PORT=8080 HISTORY_LIMIT=1000 npm start
 - **Follow mode** — auto-pans/zooms to the latest position (toggle button)
 - **History replay** — new browser tabs receive the complete track on connect
 - **Dark UI** — easy on the eyes
+- **Report form + table** — submit and view report rows with:
+  - timestamp
+  - district/city
+  - category
+  - amount
+  - description
 
 ---
 
