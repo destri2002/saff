@@ -54,7 +54,7 @@ function addLocation(point) {
 }
 
 /**
- * @typedef {{ timestamp: number, districtCity: string, category: string, amount: number, description: string, receivedAt: number }} ReportRow
+ * @typedef {{ timestamp: number, districtCity: string, category: string, amount: number, description: string, api?: string, receivedAt: number }} ReportRow
  */
 
 /** @type {ReportRow[]} */
@@ -148,13 +148,20 @@ app.post('/location', locationLimiter, (req, res) => {
 });
 
 function handleReportPost(req, res) {
-    const { timestamp, districtCity, category, amount, description } = req.body || {};
+    const body = req.body || {};
+    const { timestamp } = body;
+    const districtCity = typeof body.kabKota === 'string' ? body.kabKota : body.districtCity;
+    const category = typeof body.kategori === 'string' ? body.kategori : body.category;
+    const description = typeof body.deskripsi === 'string' ? body.deskripsi : body.description;
+    const amount = (typeof body.amount === 'number' && Number.isFinite(body.amount) && body.amount >= 0)
+        ? body.amount
+        : 0;
+    const api = (typeof body.api === 'string' && body.api.trim().length > 0)
+        ? body.api.trim().slice(0, 200)
+        : undefined;
 
     if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp <= 0) {
         return res.status(400).json({ error: 'Invalid timestamp. Expected a positive number (epoch ms).' });
-    }
-    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
-        return res.status(400).json({ error: 'Invalid amount. Expected a non-negative number.' });
     }
     if (typeof districtCity !== 'string' || districtCity.trim().length === 0) {
         return res.status(400).json({ error: 'Invalid district/city. Expected a non-empty string.' });
@@ -173,6 +180,7 @@ function handleReportPost(req, res) {
         category: category.trim().slice(0, 80),
         amount,
         description: description.trim().slice(0, 500),
+        api,
         receivedAt: Date.now(),
     };
     addReport(report);
@@ -187,7 +195,8 @@ function handleReportPost(req, res) {
  * POST /api/report
  * Both endpoints are aliases and handled by the same logic.
  * Receives one report row.
- * Body: { timestamp, districtCity, category, amount, description }
+ * Body (legacy): { timestamp, districtCity, category, amount, description }
+ * Body (android): { timestamp, api, kabKota, kategori, deskripsi }
  */
 app.post('/report', reportLimiter, handleReportPost);
 app.post('/api/report', reportLimiter, handleReportPost);

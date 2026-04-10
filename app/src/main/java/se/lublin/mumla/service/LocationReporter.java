@@ -31,6 +31,12 @@ import android.util.Log;
 
 import androidx.core.content.ContextCompat;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -60,7 +66,11 @@ import se.lublin.mumla.Settings;
  */
 public class LocationReporter {
     private static final String TAG = LocationReporter.class.getSimpleName();
-    private static final String REPORT_CATEGORY_LOCATION_UPDATE = "Location Update";
+    private static final String REPORT_CATEGORY_LOCATION_UPDATE = "Lokasi";
+    private static final String REPORT_API_SOURCE = "https://emsifa.github.io/api-wilayah-indonesia";
+    private static final String API_WILAYAH_PROVINCES_URL = REPORT_API_SOURCE + "/api/provinces.json";
+    private static final String API_WILAYAH_REGENCIES_URL_TEMPLATE = REPORT_API_SOURCE + "/api/regencies/%s.json";
+    private static final long API_REGION_CACHE_TTL_MS = 10 * 60 * 1000L;
     private static final String REPORT_DISTRICT_CITY_UNKNOWN = "Unknown";
 
     private final Context mContext;
@@ -72,6 +82,10 @@ public class LocationReporter {
 
     /** Most recently received location — updated by the LocationListener. */
     private volatile Location mLastLocation;
+    private volatile String mLastApiProvince;
+    private volatile String mLastApiCity;
+    private volatile String mLastApiKabKota;
+    private volatile long mLastApiKabKotaResolvedAt;
 
     private final LocationListener mLocationListener = new LocationListener() {
         @Override
@@ -261,9 +275,8 @@ public class LocationReporter {
 
     private String buildReportJson(Location location, String username) {
         String districtCity = resolveDistrictCity(location);
+        String kabKota = resolveKabKotaFromApi(location, districtCity);
         String category = REPORT_CATEGORY_LOCATION_UPDATE;
-        // Keep amount numeric and useful in report table: we use GPS accuracy in meters.
-        double amount = Math.max(0d, location.getAccuracy());
 
         StringBuilder description = new StringBuilder();
         if (username != null && !username.isEmpty()) {
@@ -280,33 +293,67 @@ public class LocationReporter {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         sb.append("\"timestamp\":").append(location.getTime()).append(",");
-        sb.append("\"districtCity\":\"").append(escapeJson(districtCity)).append("\",");
-        sb.append("\"category\":\"").append(escapeJson(category)).append("\",");
-        sb.append("\"amount\":").append(amount).append(",");
-        sb.append("\"description\":\"").append(escapeJson(description.toString())).append("\"");
+        sb.append("\"api\":\"").append(escapeJson(REPORT_API_SOURCE)).append("\",");
+        sb.append("\"kabKota\":\"").append(escapeJson(kabKota)).append("\",");
+        sb.append("\"kategori\":\"").append(escapeJson(category)).append("\",");
+        sb.append("\"deskripsi\":\"").append(escapeJson(description.toString())).append("\"");
         sb.append("}");
         return sb.toString();
     }
 
-    private String resolveDistrictCity(Location location) {
+    private String resolveKabKotaFromApi(Location location, String fallbackDistrictCity) {
+        Address address = reverseGeocode(location);
+        if (address == null) {
+            return fallbackDistrictCity;
+        }
+
+        String province = firstNonEmpty(address.getAdminArea(), address.getSubAdminArea());
+        String city = firstNonEmpty(address.getSubAdminArea(), address.getLocality(), address.getAdminArea());
+        if (province == null || city == null) {
+            return fallbackDistrictCity;
+        }
+
+        long now = System.currentTimeMillis();
+        if (province.equalsIgnoreCase(mLastApiProvince)
+                && city.equalsIgnoreCase(mLastApiCity)
+                && mLastApiKabKota != null
+                && now - mLastApiKabKotaResolvedAt < API_REGION_CACHE_TTL_MS) {
+            return mLastApiKabKota;
+        }
+
         try {
-            if (Geocoder.isPresent()) {
-                Geocoder geocoder = new Geocoder(mContext, Locale.getDefault());
-                List<Address> addresses = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
-                if (addresses != null && !addresses.isEmpty()) {
-                    Address a = addresses.get(0);
-                    String district = firstNonEmpty(a.getSubAdminArea(), a.getLocality(), a.getAdminArea());
-                    String city = firstNonEmpty(a.getLocality(), a.getSubAdminArea(), a.getAdminArea(), a.getCountryName());
-                    if (district != null && city != null && !district.equalsIgnoreCase(city)) {
-                        return (district + "/" + city).trim();
-                    }
-                    if (city != null) {
-                        return city.trim();
-                    }
-                }
+            String provinceId = findProvinceId(province);
+            if (provinceId == null) {
+                return fallbackDistrictCity;
             }
+
+            String kabKotaFromApi = findRegencyName(provinceId, city);
+            if (kabKotaFromApi == null) {
+                return fallbackDistrictCity;
+            }
+
+            mLastApiProvince = province;
+            mLastApiCity = city;
+            mLastApiKabKota = kabKotaFromApi;
+            mLastApiKabKotaResolvedAt = now;
+            return kabKotaFromApi;
         } catch (Exception e) {
-            Log.d(TAG, "Could not reverse geocode district/city: " + e.getMessage());
+            Log.d(TAG, "Could not resolve kab/kota from API wilayah: " + e.getMessage());
+            return fallbackDistrictCity;
+        }
+    }
+
+    private String resolveDistrictCity(Location location) {
+        Address address = reverseGeocode(location);
+        if (address != null) {
+            String district = firstNonEmpty(address.getSubAdminArea(), address.getLocality(), address.getAdminArea());
+            String city = firstNonEmpty(address.getLocality(), address.getSubAdminArea(), address.getAdminArea(), address.getCountryName());
+            if (district != null && city != null && !district.equalsIgnoreCase(city)) {
+                return (district + "/" + city).trim();
+            }
+            if (city != null) {
+                return city.trim();
+            }
         }
 
         String provider = location.getProvider();
@@ -324,6 +371,101 @@ public class LocationReporter {
             }
         }
         return null;
+    }
+
+    private Address reverseGeocode(Location location) {
+        try {
+            if (!Geocoder.isPresent()) {
+                return null;
+            }
+            Geocoder geocoder = new Geocoder(mContext, Locale.getDefault());
+            List<Address> addresses = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
+            if (addresses != null && !addresses.isEmpty()) {
+                return addresses.get(0);
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "Could not reverse geocode district/city: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private String findProvinceId(String provinceName) throws Exception {
+        JSONArray provinces = fetchJsonArray(API_WILAYAH_PROVINCES_URL);
+        for (int i = 0; i < provinces.length(); i++) {
+            JSONObject province = provinces.optJSONObject(i);
+            if (province == null) continue;
+            String apiProvinceName = province.optString("name", "");
+            if (namesLikelyMatch(apiProvinceName, provinceName)) {
+                return province.optString("id", null);
+            }
+        }
+        return null;
+    }
+
+    private String findRegencyName(String provinceId, String cityName) throws Exception {
+        String endpointUrl = String.format(Locale.US, API_WILAYAH_REGENCIES_URL_TEMPLATE, provinceId);
+        JSONArray regencies = fetchJsonArray(endpointUrl);
+        for (int i = 0; i < regencies.length(); i++) {
+            JSONObject regency = regencies.optJSONObject(i);
+            if (regency == null) continue;
+            String apiRegencyName = regency.optString("name", "");
+            if (namesLikelyMatch(apiRegencyName, cityName)) {
+                return apiRegencyName;
+            }
+        }
+        return null;
+    }
+
+    private static JSONArray fetchJsonArray(String endpointUrl) throws Exception {
+        URL url = new URL(endpointUrl);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        try {
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode < 200 || responseCode >= 300) {
+                throw new IllegalStateException("API wilayah responded with HTTP " + responseCode);
+            }
+
+            StringBuilder response = new StringBuilder();
+            try (InputStream inputStream = connection.getInputStream();
+                 InputStreamReader reader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
+                 BufferedReader bufferedReader = new BufferedReader(reader)) {
+                String line;
+                while ((line = bufferedReader.readLine()) != null) {
+                    response.append(line);
+                }
+            }
+            return new JSONArray(response.toString());
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static boolean namesLikelyMatch(String left, String right) {
+        String normalizedLeft = normalizeWilayahName(left);
+        String normalizedRight = normalizeWilayahName(right);
+        if (normalizedLeft.isEmpty() || normalizedRight.isEmpty()) {
+            return false;
+        }
+        return normalizedLeft.equals(normalizedRight)
+                || normalizedLeft.contains(normalizedRight)
+                || normalizedRight.contains(normalizedLeft);
+    }
+
+    private static String normalizeWilayahName(String value) {
+        if (value == null) return "";
+        return value.toUpperCase(Locale.US)
+                .replace("DAERAH KHUSUS IBUKOTA", "DKI")
+                .replace("DAERAH ISTIMEWA", "DI")
+                .replaceAll("\\bPROVINSI\\b", " ")
+                .replaceAll("\\bKABUPATEN\\b", " ")
+                .replaceAll("\\bKOTA\\b", " ")
+                .replaceAll("[^A-Z0-9]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     private static String deriveReportUrl(String dashboardUrl) {
