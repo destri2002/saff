@@ -46,7 +46,6 @@ import androidx.viewpager.widget.ViewPager;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.net.HttpURLConnection;
@@ -265,10 +264,12 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
 
         View dialogView = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_create_report, null);
         final EditText reportApiUrlField = dialogView.findViewById(R.id.report_api_url);
-        final EditText districtCityField = dialogView.findViewById(R.id.report_district_city);
-        final EditText categoryField = dialogView.findViewById(R.id.report_category);
-        final EditText amountField = dialogView.findViewById(R.id.report_amount);
-        final EditText descriptionField = dialogView.findViewById(R.id.report_description);
+        final EditText namaPelaporField = dialogView.findViewById(R.id.report_nama_pelapor);
+        final EditText kabKotaField = dialogView.findViewById(R.id.report_kab_kota);
+        final EditText kecamatanField = dialogView.findViewById(R.id.report_kecamatan);
+        final EditText kelurahanField = dialogView.findViewById(R.id.report_kelurahan);
+        final EditText kategoriField = dialogView.findViewById(R.id.report_kategori);
+        final EditText deskripsiField = dialogView.findViewById(R.id.report_deskripsi);
         reportApiUrlField.setText(getInitialReportApiUrl());
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(getActivity())
@@ -276,11 +277,13 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
                 .setView(dialogView)
                 .setPositiveButton(R.string.report_submit, (dialog, which) -> {
                     String reportApiUrl = reportApiUrlField.getText().toString().trim();
-                    String districtCity = districtCityField.getText().toString().trim();
-                    String category = categoryField.getText().toString().trim();
-                    String amountText = amountField.getText().toString().trim();
-                    String description = descriptionField.getText().toString().trim();
-                    submitReport(reportApiUrl, districtCity, category, amountText, description);
+                    String namaPelapor = namaPelaporField.getText().toString().trim();
+                    String kabKota = kabKotaField.getText().toString().trim();
+                    String kecamatan = kecamatanField.getText().toString().trim();
+                    String kelurahan = kelurahanField.getText().toString().trim();
+                    String kategori = kategoriField.getText().toString().trim();
+                    String deskripsi = deskripsiField.getText().toString().trim();
+                    submitReport(reportApiUrl, namaPelapor, kabKota, kecamatan, kelurahan, kategori, deskripsi);
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
@@ -296,24 +299,12 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         return deriveReportUrl(dashboardUrl);
     }
 
-    private void submitReport(String reportApiUrl, String districtCity, String category, String amountText, String description) {
+    private void submitReport(String reportApiUrl, String namaPelapor, String kabKota, String kecamatan, String kelurahan, String kategori, String deskripsi) {
         if (reportApiUrl.isEmpty()) {
             Toast.makeText(getActivity(), R.string.report_missing_dashboard_url, Toast.LENGTH_LONG).show();
             return;
         }
-        if (districtCity.isEmpty() || category.isEmpty() || amountText.isEmpty() || description.isEmpty()) {
-            Toast.makeText(getActivity(), R.string.report_invalid_fields, Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        final double amount;
-        try {
-            amount = Double.parseDouble(amountText);
-        } catch (NumberFormatException e) {
-            Toast.makeText(getActivity(), R.string.report_invalid_fields, Toast.LENGTH_LONG).show();
-            return;
-        }
-        if (amount < 0) {
+        if (namaPelapor.isEmpty() || kabKota.isEmpty() || kecamatan.isEmpty() || kelurahan.isEmpty() || kategori.isEmpty() || deskripsi.isEmpty()) {
             Toast.makeText(getActivity(), R.string.report_invalid_fields, Toast.LENGTH_LONG).show();
             return;
         }
@@ -328,7 +319,7 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
                 .putString(PREF_LOCAL_REPORT_API_URL, reportUrl)
                 .apply();
         final long timestamp = System.currentTimeMillis();
-        final String json = buildReportJson(timestamp, districtCity, category, amount, description);
+        final String json = buildReportJson(timestamp, namaPelapor, kabKota, kecamatan, kelurahan, kategori, deskripsi);
 
         REPORT_EXECUTOR.execute(() -> {
             boolean success = postReport(reportUrl, json);
@@ -397,14 +388,16 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         return trimmed + "/report";
     }
 
-    private static String buildReportJson(long timestamp, String districtCity, String category, double amount, String description) {
+    private static String buildReportJson(long timestamp, String namaPelapor, String kabKota, String kecamatan, String kelurahan, String kategori, String deskripsi) {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         sb.append("\"timestamp\":").append(timestamp).append(",");
-        sb.append("\"districtCity\":\"").append(escapeJson(districtCity)).append("\",");
-        sb.append("\"category\":\"").append(escapeJson(category)).append("\",");
-        sb.append("\"amount\":").append(String.format(Locale.US, "%.3f", amount)).append(",");
-        sb.append("\"description\":\"").append(escapeJson(description)).append("\"");
+        sb.append("\"namaPelapor\":\"").append(escapeJson(namaPelapor)).append("\",");
+        sb.append("\"kabKota\":\"").append(escapeJson(kabKota)).append("\",");
+        sb.append("\"kecamatan\":\"").append(escapeJson(kecamatan)).append("\",");
+        sb.append("\"kelurahan\":\"").append(escapeJson(kelurahan)).append("\",");
+        sb.append("\"kategori\":\"").append(escapeJson(kategori)).append("\",");
+        sb.append("\"deskripsi\":\"").append(escapeJson(deskripsi)).append("\"");
         sb.append("}");
         return sb.toString();
     }

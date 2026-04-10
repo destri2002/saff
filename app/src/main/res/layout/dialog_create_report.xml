@@ -13,31 +13,45 @@
         android:inputType="textUri" />
 
     <EditText
-        android:id="@+id/report_district_city"
+        android:id="@+id/report_nama_pelapor"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/report_district_city"
+        android:hint="@string/report_nama_pelapor"
         android:inputType="textCapWords" />
 
     <EditText
-        android:id="@+id/report_category"
+        android:id="@+id/report_kab_kota"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/report_category"
+        android:hint="@string/report_kab_kota"
+        android:inputType="textCapWords" />
+
+    <EditText
+        android:id="@+id/report_kecamatan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/report_kecamatan"
+        android:inputType="textCapWords" />
+
+    <EditText
+        android:id="@+id/report_kelurahan"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/report_kelurahan"
+        android:inputType="textCapWords" />
+
+    <EditText
+        android:id="@+id/report_kategori"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/report_kategori"
         android:inputType="textCapSentences" />
 
     <EditText
-        android:id="@+id/report_amount"
+        android:id="@+id/report_deskripsi"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/report_amount"
-        android:inputType="numberDecimal" />
-
-    <EditText
-        android:id="@+id/report_description"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/report_description"
+        android:hint="@string/report_deskripsi"
         android:inputType="textCapSentences|textMultiLine"
         android:minLines="3" />
 
