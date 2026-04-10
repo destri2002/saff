@@ -48,8 +48,11 @@ import androidx.viewpager.widget.PagerTabStrip;
 import androidx.viewpager.widget.ViewPager;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.net.HttpURLConnection;
@@ -85,10 +88,12 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
     private static final ExecutorService REPORT_EXECUTOR = Executors.newSingleThreadExecutor();
     private static final String PREF_LOCAL_REPORT_API_URL = "channel_report_api_url";
     private static final String API_WILAYAH_BASE_URL = "https://emsifa.github.io/api-wilayah-indonesia";
+    private static final String API_WILAYAH_FALLBACK_BASE_URL = "https://cdn.jsdelivr.net/gh/emsifa/api-wilayah-indonesia@main";
     private static final String API_WILAYAH_PROVINCES_URL = API_WILAYAH_BASE_URL + "/api/provinces.json";
     private static final String API_WILAYAH_REGENCIES_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/regencies/%s.json";
     private static final String API_WILAYAH_DISTRICTS_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/districts/%s.json";
     private static final String API_WILAYAH_VILLAGES_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/villages/%s.json";
+    private static final int API_WILAYAH_TIMEOUT_MS = 10000;
 
     private ViewPager mViewPager;
     private PagerTabStrip mTabStrip;
@@ -422,15 +427,31 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
                     String provinceId = province.optString("id", "");
                     if (!provinceId.matches("\\d{1,4}")) continue;
                     String endpointUrl = String.format(Locale.US, API_WILAYAH_REGENCIES_URL_TEMPLATE, provinceId);
-                    JSONArray regencyJson = fetchJsonArray(endpointUrl);
-                    regencies.addAll(parseWilayahOptions(regencyJson));
+                    try {
+                        JSONArray regencyJson = fetchJsonArray(endpointUrl);
+                        regencies.addAll(parseWilayahOptions(regencyJson));
+                    } catch (Exception provinceError) {
+                        Log.w(TAG, "Failed to load regencies for province " + provinceId + ": " + provinceError.getMessage());
+                    }
+                }
+                if (regencies.isEmpty()) {
+                    throw new IllegalStateException("No regencies loaded from API wilayah");
+                }
+                Collections.sort(regencies, (left, right) -> left.name.compareToIgnoreCase(right.name));
+                List<WilayahOption> uniqueRegencies = new ArrayList<>();
+                Set<String> seenIds = new HashSet<>();
+                for (WilayahOption regency : regencies) {
+                    if (regency == null || !regency.hasValidId()) continue;
+                    if (seenIds.add(regency.id)) {
+                        uniqueRegencies.add(regency);
+                    }
                 }
                 Handler main = new Handler(Looper.getMainLooper());
                 main.post(() -> {
                     if (getActivity() == null) return;
                     kabKotaAdapter.clear();
                     kabKotaAdapter.add(WilayahOption.placeholder(placeholderLabel));
-                    kabKotaAdapter.addAll(regencies);
+                    kabKotaAdapter.addAll(uniqueRegencies);
                     kabKotaAdapter.notifyDataSetChanged();
                 });
             } catch (Exception e) {
@@ -577,12 +598,40 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
     }
 
     private static JSONArray fetchJsonArray(String endpointUrl) throws Exception {
+        Exception lastException = null;
+        String fallbackUrl = buildWilayahFallbackUrl(endpointUrl);
+        String[] candidateUrls = fallbackUrl == null
+                ? new String[]{endpointUrl}
+                : new String[]{endpointUrl, fallbackUrl};
+        for (String candidateUrl : candidateUrls) {
+            try {
+                return fetchJsonArrayFromUrl(candidateUrl);
+            } catch (Exception e) {
+                lastException = e;
+                Log.w(TAG, "Failed API wilayah request to " + candidateUrl + ": " + e.getMessage());
+            }
+        }
+        throw lastException != null ? lastException : new IllegalStateException("Unknown API wilayah error");
+    }
+
+    private static String buildWilayahFallbackUrl(String endpointUrl) {
+        String expectedPrefix = API_WILAYAH_BASE_URL + "/";
+        if (endpointUrl == null || !endpointUrl.startsWith(expectedPrefix)) {
+            return null;
+        }
+        String path = endpointUrl.substring(API_WILAYAH_BASE_URL.length());
+        return API_WILAYAH_FALLBACK_BASE_URL + path;
+    }
+
+    private static JSONArray fetchJsonArrayFromUrl(String endpointUrl) throws Exception {
         URL url = new URL(endpointUrl);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         try {
             connection.setRequestMethod("GET");
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(5000);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("User-Agent", "Mumla-Android");
+            connection.setConnectTimeout(API_WILAYAH_TIMEOUT_MS);
+            connection.setReadTimeout(API_WILAYAH_TIMEOUT_MS);
 
             int responseCode = connection.getResponseCode();
             if (responseCode < 200 || responseCode >= 300) {
