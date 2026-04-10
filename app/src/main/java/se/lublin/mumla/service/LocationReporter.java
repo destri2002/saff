@@ -66,10 +66,11 @@ import se.lublin.mumla.Settings;
  */
 public class LocationReporter {
     private static final String TAG = LocationReporter.class.getSimpleName();
-    private static final String REPORT_CATEGORY_LOCATION_UPDATE = "Lokasi";
+    private static final String REPORT_CATEGORY_LOCATION_UPDATE = "Location Update";
     private static final String REPORT_API_SOURCE = "https://emsifa.github.io/api-wilayah-indonesia";
     private static final String API_WILAYAH_PROVINCES_URL = REPORT_API_SOURCE + "/api/provinces.json";
     private static final String API_WILAYAH_REGENCIES_URL_TEMPLATE = REPORT_API_SOURCE + "/api/regencies/%s.json";
+    // Cache for 10 minutes to reduce API requests while keeping region names reasonably fresh.
     private static final long API_REGION_CACHE_TTL_MS = 10 * 60 * 1000L;
     private static final String REPORT_DISTRICT_CITY_UNKNOWN = "Unknown";
 
