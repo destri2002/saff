@@ -19,25 +19,28 @@
         android:hint="@string/report_nama_pelapor"
         android:inputType="textCapWords" />
 
-    <EditText
+    <AutoCompleteTextView
         android:id="@+id/report_kab_kota"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/report_kab_kota"
+        android:completionThreshold="1"
         android:inputType="textCapWords" />
 
-    <EditText
+    <AutoCompleteTextView
         android:id="@+id/report_kecamatan"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/report_kecamatan"
+        android:completionThreshold="1"
         android:inputType="textCapWords" />
 
-    <EditText
+    <AutoCompleteTextView
         android:id="@+id/report_kelurahan"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/report_kelurahan"
+        android:completionThreshold="1"
         android:inputType="textCapWords" />
 
     <EditText
