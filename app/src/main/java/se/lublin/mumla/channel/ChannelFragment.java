@@ -94,6 +94,7 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
     private static final String API_WILAYAH_DISTRICTS_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/districts/%s.json";
     private static final String API_WILAYAH_VILLAGES_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/villages/%s.json";
     private static final int API_WILAYAH_TIMEOUT_MS = 10000;
+    private static final int API_WILAYAH_MAX_REDIRECTS = 5;
 
     private ViewPager mViewPager;
     private PagerTabStrip mTabStrip;
@@ -620,37 +621,62 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
             return null;
         }
         String path = endpointUrl.substring(API_WILAYAH_BASE_URL.length());
+        if (path.startsWith("/api/")) {
+            path = path.substring("/api".length());
+        }
         return API_WILAYAH_FALLBACK_BASE_URL + path;
     }
 
     private static JSONArray fetchJsonArrayFromUrl(String endpointUrl) throws Exception {
-        URL url = new URL(endpointUrl);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        try {
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent", "Mumla-Android");
-            connection.setConnectTimeout(API_WILAYAH_TIMEOUT_MS);
-            connection.setReadTimeout(API_WILAYAH_TIMEOUT_MS);
+        String currentUrl = endpointUrl;
+        for (int redirectCount = 0; redirectCount <= API_WILAYAH_MAX_REDIRECTS; redirectCount++) {
+            URL url = new URL(currentUrl);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            try {
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestMethod("GET");
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("User-Agent", "Mumla-Android");
+                connection.setConnectTimeout(API_WILAYAH_TIMEOUT_MS);
+                connection.setReadTimeout(API_WILAYAH_TIMEOUT_MS);
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode < 200 || responseCode >= 300) {
-                throw new IllegalStateException("API wilayah responded with HTTP " + responseCode);
-            }
-
-            StringBuilder response = new StringBuilder();
-            try (InputStream inputStream = connection.getInputStream();
-                 InputStreamReader reader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
-                 BufferedReader bufferedReader = new BufferedReader(reader)) {
-                String line;
-                while ((line = bufferedReader.readLine()) != null) {
-                    response.append(line);
+                int responseCode = connection.getResponseCode();
+                if (responseCode >= 200 && responseCode < 300) {
+                    StringBuilder response = new StringBuilder();
+                    try (InputStream inputStream = connection.getInputStream();
+                         InputStreamReader reader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
+                         BufferedReader bufferedReader = new BufferedReader(reader)) {
+                        String line;
+                        while ((line = bufferedReader.readLine()) != null) {
+                            response.append(line);
+                        }
+                    }
+                    return new JSONArray(response.toString());
                 }
+
+                if (isRedirectStatus(responseCode)) {
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.trim().isEmpty()) {
+                        throw new IllegalStateException("API wilayah redirect without Location header");
+                    }
+                    currentUrl = new URL(url, location).toString();
+                    continue;
+                }
+
+                throw new IllegalStateException("API wilayah responded with HTTP " + responseCode);
+            } finally {
+                connection.disconnect();
             }
-            return new JSONArray(response.toString());
-        } finally {
-            connection.disconnect();
         }
+        throw new IllegalStateException("API wilayah exceeded max redirects");
+    }
+
+    private static boolean isRedirectStatus(int responseCode) {
+        return responseCode == HttpURLConnection.HTTP_MOVED_PERM
+                || responseCode == HttpURLConnection.HTTP_MOVED_TEMP
+                || responseCode == HttpURLConnection.HTTP_SEE_OTHER
+                || responseCode == 307
+                || responseCode == 308;
     }
 
     private static List<WilayahOption> parseWilayahOptions(JSONArray array) {
