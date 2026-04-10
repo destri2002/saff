@@ -29,7 +29,7 @@ const rateLimit = require('express-rate-limit');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HISTORY_LIMIT = parseInt(process.env.HISTORY_LIMIT || '500', 10);
 const REPORT_HISTORY_LIMIT = parseInt(process.env.REPORT_HISTORY_LIMIT || '500', 10);
-const REPORT_API_SOURCE = 'https://emsifa.github.io/api-wilayah-indonesia';
+const REPORT_API_SOURCE = (process.env.REPORT_API_SOURCE || 'https://emsifa.github.io/api-wilayah-indonesia').trim();
 
 
 // ---------------------------------------------------------------------------
