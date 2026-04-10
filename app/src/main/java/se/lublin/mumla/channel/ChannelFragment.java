@@ -289,7 +289,7 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         final Spinner kabKotaField = dialogView.findViewById(R.id.report_kab_kota);
         final Spinner kecamatanField = dialogView.findViewById(R.id.report_kecamatan);
         final Spinner kelurahanField = dialogView.findViewById(R.id.report_kelurahan);
-        final EditText kategoriField = dialogView.findViewById(R.id.report_kategori);
+        final Spinner kategoriField = dialogView.findViewById(R.id.report_kategori);
         final EditText deskripsiField = dialogView.findViewById(R.id.report_deskripsi);
         reportApiUrlField.setText(getInitialReportApiUrl());
         final WilayahSelectionState wilayahState = setupWilayahSearch(kabKotaField, kecamatanField, kelurahanField);
@@ -303,7 +303,8 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
                     String kabKota = wilayahState.getKabKota();
                     String kecamatan = wilayahState.getKecamatan();
                     String kelurahan = wilayahState.getKelurahan();
-                    String kategori = kategoriField.getText().toString().trim();
+                    Object kategoriSelection = kategoriField.getSelectedItem();
+                    String kategori = kategoriSelection == null ? "" : kategoriSelection.toString().trim();
                     String deskripsi = deskripsiField.getText().toString().trim();
                     if (!wilayahState.isSelectionValid()) {
                         Toast.makeText(getActivity(), R.string.report_invalid_wilayah_selection, Toast.LENGTH_LONG).show();

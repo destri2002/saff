@@ -37,12 +37,12 @@
         android:layout_height="wrap_content"
         android:prompt="@string/report_kelurahan" />
 
-    <EditText
+    <Spinner
         android:id="@+id/report_kategori"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/report_kategori"
-        android:inputType="textCapSentences" />
+        android:entries="@array/report_kategori_options"
+        android:prompt="@string/report_kategori" />
 
     <EditText
         android:id="@+id/report_deskripsi"

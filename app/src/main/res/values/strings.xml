@@ -180,6 +180,14 @@
     <string name="report_select_kab_kota">Pilih Kab/Kota</string>
     <string name="report_select_kecamatan">Pilih Kecamatan</string>
     <string name="report_select_kelurahan">Pilih Kelurahan</string>
+    <string-array name="report_kategori_options">
+        <item>Meninggal Dunia</item>
+        <item>Luka Berat</item>
+        <item>Luka Ringan</item>
+        <item>Pengungsian</item>
+        <item>Hilang</item>
+        <item>Lainnya</item>
+    </string-array>
     <string name="report_sent_success">Report sent.</string>
     <string name="report_sent_failed">Failed to send report.</string>
     <string name="untrusted_certificate">Untrusted Certificate</string>
