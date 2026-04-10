@@ -39,7 +39,7 @@
         android:id="@+id/target_panel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?colorPrimaryDark">
+        android:background="?attr/colorPrimary">
 
         <TextView
             android:id="@+id/target_panel_warning"
@@ -49,7 +49,7 @@
             android:textSize="6pt"
             android:textColor="?android:textColorPrimaryInverse"
             android:singleLine="true"
-            android:gravity="left|center_vertical"
+            android:gravity="start|center_vertical"
             android:textStyle="italic"
             android:padding="8dp"/>
 
@@ -74,12 +74,13 @@
         <Button
             android:id="@+id/pushtotalk"
             android:layout_width="match_parent"
-            android:layout_height="50dp"
+            android:layout_height="56dp"
             android:text="@string/ptt"
             android:textColor="?android:attr/textColorPrimaryInverse"
             android:textAllCaps="true"
             android:textStyle="bold"
-            android:textSize="14sp"
+            android:textSize="15sp"
+            android:letterSpacing="0.08"
             app:backgroundTint="@drawable/ptt_button_tint"
             app:cornerRadius="0dp"
             android:insetTop="0dp"

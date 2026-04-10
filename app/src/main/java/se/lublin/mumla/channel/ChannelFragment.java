@@ -20,6 +20,8 @@ package se.lublin.mumla.channel;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
@@ -30,8 +32,13 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
+import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
@@ -41,7 +48,23 @@ import androidx.viewpager.widget.PagerTabStrip;
 import androidx.viewpager.widget.ViewPager;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import se.lublin.humla.HumlaService;
 import se.lublin.humla.IHumlaService;
@@ -62,6 +85,16 @@ import se.lublin.mumla.util.HumlaServiceFragment;
  */
 public class ChannelFragment extends HumlaServiceFragment implements SharedPreferences.OnSharedPreferenceChangeListener, ChatTargetProvider {
     private static final String TAG = ChannelFragment.class.getName();
+    private static final ExecutorService REPORT_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final String PREF_LOCAL_REPORT_API_URL = "channel_report_api_url";
+    private static final String API_WILAYAH_BASE_URL = "https://emsifa.github.io/api-wilayah-indonesia";
+    private static final String API_WILAYAH_FALLBACK_BASE_URL = "https://cdn.jsdelivr.net/gh/emsifa/api-wilayah-indonesia@main";
+    private static final String API_WILAYAH_PROVINCES_URL = API_WILAYAH_BASE_URL + "/api/provinces.json";
+    private static final String API_WILAYAH_REGENCIES_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/regencies/%s.json";
+    private static final String API_WILAYAH_DISTRICTS_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/districts/%s.json";
+    private static final String API_WILAYAH_VILLAGES_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/villages/%s.json";
+    private static final int API_WILAYAH_TIMEOUT_MS = 10000;
+    private static final int API_WILAYAH_MAX_REDIRECTS = 5;
 
     private ViewPager mViewPager;
     private PagerTabStrip mTabStrip;
@@ -240,8 +273,490 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         } else if (itemId == R.id.menu_input_continuous) {
             settings.setInputMethod(Settings.ARRAY_INPUT_METHOD_CONTINUOUS);
             return true;
+        } else if (itemId == R.id.menu_create_report) {
+            showCreateReportDialog();
+            return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void showCreateReportDialog() {
+        if (getActivity() == null) return;
+
+        View dialogView = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_create_report, null);
+        final EditText reportApiUrlField = dialogView.findViewById(R.id.report_api_url);
+        final EditText namaPelaporField = dialogView.findViewById(R.id.report_nama_pelapor);
+        final Spinner kabKotaField = dialogView.findViewById(R.id.report_kab_kota);
+        final Spinner kecamatanField = dialogView.findViewById(R.id.report_kecamatan);
+        final Spinner kelurahanField = dialogView.findViewById(R.id.report_kelurahan);
+        final Spinner kategoriField = dialogView.findViewById(R.id.report_kategori);
+        final EditText deskripsiField = dialogView.findViewById(R.id.report_deskripsi);
+        reportApiUrlField.setText(getInitialReportApiUrl());
+        final WilayahSelectionState wilayahState = setupWilayahSearch(kabKotaField, kecamatanField, kelurahanField);
+
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(getActivity())
+                .setTitle(R.string.create_report_title)
+                .setView(dialogView)
+                .setPositiveButton(R.string.report_submit, (dialog, which) -> {
+                    String reportApiUrl = reportApiUrlField.getText().toString().trim();
+                    String namaPelapor = namaPelaporField.getText().toString().trim();
+                    String kabKota = wilayahState.getKabKota();
+                    String kecamatan = wilayahState.getKecamatan();
+                    String kelurahan = wilayahState.getKelurahan();
+                    Object kategoriSelection = kategoriField.getSelectedItem();
+                    String kategori = kategoriSelection == null ? "" : kategoriSelection.toString().trim();
+                    String deskripsi = deskripsiField.getText().toString().trim();
+                    if (!wilayahState.isSelectionValid()) {
+                        Toast.makeText(getActivity(), R.string.report_invalid_wilayah_selection, Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    submitReport(reportApiUrl, namaPelapor, kabKota, kecamatan, kelurahan, kategori, deskripsi);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private String getInitialReportApiUrl() {
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String localReportUrl = preferences.getString(PREF_LOCAL_REPORT_API_URL, "");
+        if (localReportUrl != null && !localReportUrl.trim().isEmpty()) {
+            return localReportUrl.trim();
+        }
+        String dashboardUrl = Settings.getInstance(getActivity()).getDashboardUrl();
+        return deriveReportUrl(dashboardUrl);
+    }
+
+    private WilayahSelectionState setupWilayahSearch(Spinner kabKotaField, Spinner kecamatanField, Spinner kelurahanField) {
+        WilayahSelectionState state = new WilayahSelectionState();
+
+        final String kabPlaceholder = getString(R.string.report_select_kab_kota);
+        final String kecPlaceholder = getString(R.string.report_select_kecamatan);
+        final String kelPlaceholder = getString(R.string.report_select_kelurahan);
+
+        ArrayAdapter<WilayahOption> kabKotaAdapter = createWilayahSpinnerAdapter(kabPlaceholder);
+        ArrayAdapter<WilayahOption> kecamatanAdapter = createWilayahSpinnerAdapter(kecPlaceholder);
+        ArrayAdapter<WilayahOption> kelurahanAdapter = createWilayahSpinnerAdapter(kelPlaceholder);
+        kabKotaField.setAdapter(kabKotaAdapter);
+        kecamatanField.setAdapter(kecamatanAdapter);
+        kelurahanField.setAdapter(kelurahanAdapter);
+        kecamatanField.setEnabled(false);
+        kelurahanField.setEnabled(false);
+
+        kabKotaField.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                WilayahOption selected = kabKotaAdapter.getItem(position);
+                state.regency = selected != null && selected.hasValidId() ? selected : null;
+                state.district = null;
+                state.village = null;
+                resetSpinner(kecamatanField, kecamatanAdapter, kecPlaceholder);
+                resetSpinner(kelurahanField, kelurahanAdapter, kelPlaceholder);
+                kelurahanField.setEnabled(false);
+                if (state.regency == null) {
+                    kecamatanField.setEnabled(false);
+                    return;
+                }
+                kecamatanField.setEnabled(true);
+                loadDistrictsByRegency(state.regency.id, kecamatanAdapter, kecPlaceholder);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                state.regency = null;
+            }
+        });
+
+        kecamatanField.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                WilayahOption selected = kecamatanAdapter.getItem(position);
+                state.district = selected != null && selected.hasValidId() ? selected : null;
+                state.village = null;
+                resetSpinner(kelurahanField, kelurahanAdapter, kelPlaceholder);
+                if (state.district == null) {
+                    kelurahanField.setEnabled(false);
+                    return;
+                }
+                kelurahanField.setEnabled(true);
+                loadVillagesByDistrict(state.district.id, kelurahanAdapter, kelPlaceholder);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                state.district = null;
+            }
+        });
+
+        kelurahanField.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                WilayahOption selected = kelurahanAdapter.getItem(position);
+                state.village = selected != null && selected.hasValidId() ? selected : null;
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                state.village = null;
+            }
+        });
+
+        loadRegencies(kabKotaAdapter, kabPlaceholder);
+        return state;
+    }
+
+    private ArrayAdapter<WilayahOption> createWilayahSpinnerAdapter(String placeholderLabel) {
+        ArrayAdapter<WilayahOption> adapter = new ArrayAdapter<>(getActivity(), android.R.layout.simple_spinner_item, new ArrayList<>());
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        adapter.add(WilayahOption.placeholder(placeholderLabel));
+        return adapter;
+    }
+
+    private void resetSpinner(Spinner spinner, ArrayAdapter<WilayahOption> adapter, String placeholderLabel) {
+        adapter.clear();
+        adapter.add(WilayahOption.placeholder(placeholderLabel));
+        adapter.notifyDataSetChanged();
+        spinner.setSelection(0, false);
+    }
+
+    private void loadRegencies(ArrayAdapter<WilayahOption> kabKotaAdapter, String placeholderLabel) {
+        REPORT_EXECUTOR.execute(() -> {
+            try {
+                List<WilayahOption> regencies = new ArrayList<>();
+                JSONArray provinces = fetchJsonArray(API_WILAYAH_PROVINCES_URL);
+                for (int i = 0; i < provinces.length(); i++) {
+                    JSONObject province = provinces.optJSONObject(i);
+                    if (province == null) continue;
+                    String provinceId = province.optString("id", "");
+                    if (!provinceId.matches("\\d{1,4}")) continue;
+                    String endpointUrl = String.format(Locale.US, API_WILAYAH_REGENCIES_URL_TEMPLATE, provinceId);
+                    try {
+                        JSONArray regencyJson = fetchJsonArray(endpointUrl);
+                        regencies.addAll(parseWilayahOptions(regencyJson));
+                    } catch (Exception provinceError) {
+                        Log.w(TAG, "Failed to load regencies for province " + provinceId + ": " + provinceError.getMessage());
+                    }
+                }
+                if (regencies.isEmpty()) {
+                    throw new IllegalStateException("No regencies loaded from API wilayah");
+                }
+                Collections.sort(regencies, (left, right) -> left.name.compareToIgnoreCase(right.name));
+                List<WilayahOption> uniqueRegencies = new ArrayList<>();
+                Set<String> seenIds = new HashSet<>();
+                for (WilayahOption regency : regencies) {
+                    if (regency == null || !regency.hasValidId()) continue;
+                    if (seenIds.add(regency.id)) {
+                        uniqueRegencies.add(regency);
+                    }
+                }
+                Handler main = new Handler(Looper.getMainLooper());
+                main.post(() -> {
+                    if (getActivity() == null) return;
+                    kabKotaAdapter.clear();
+                    kabKotaAdapter.add(WilayahOption.placeholder(placeholderLabel));
+                    kabKotaAdapter.addAll(uniqueRegencies);
+                    kabKotaAdapter.notifyDataSetChanged();
+                });
+            } catch (Exception e) {
+                showWilayahLoadFailed();
+            }
+        });
+    }
+
+    private void loadDistrictsByRegency(String regencyId, ArrayAdapter<WilayahOption> kecamatanAdapter, String placeholderLabel) {
+        if (regencyId == null || !regencyId.matches("\\d{1,8}")) return;
+        REPORT_EXECUTOR.execute(() -> {
+            try {
+                String endpointUrl = String.format(Locale.US, API_WILAYAH_DISTRICTS_URL_TEMPLATE, regencyId);
+                List<WilayahOption> districts = parseWilayahOptions(fetchJsonArray(endpointUrl));
+                Handler main = new Handler(Looper.getMainLooper());
+                main.post(() -> {
+                    if (getActivity() == null) return;
+                    kecamatanAdapter.clear();
+                    kecamatanAdapter.add(WilayahOption.placeholder(placeholderLabel));
+                    kecamatanAdapter.addAll(districts);
+                    kecamatanAdapter.notifyDataSetChanged();
+                });
+            } catch (Exception e) {
+                showWilayahLoadFailed();
+            }
+        });
+    }
+
+    private void loadVillagesByDistrict(String districtId, ArrayAdapter<WilayahOption> kelurahanAdapter, String placeholderLabel) {
+        if (districtId == null || !districtId.matches("\\d{1,12}")) return;
+        REPORT_EXECUTOR.execute(() -> {
+            try {
+                String endpointUrl = String.format(Locale.US, API_WILAYAH_VILLAGES_URL_TEMPLATE, districtId);
+                List<WilayahOption> villages = parseWilayahOptions(fetchJsonArray(endpointUrl));
+                Handler main = new Handler(Looper.getMainLooper());
+                main.post(() -> {
+                    if (getActivity() == null) return;
+                    kelurahanAdapter.clear();
+                    kelurahanAdapter.add(WilayahOption.placeholder(placeholderLabel));
+                    kelurahanAdapter.addAll(villages);
+                    kelurahanAdapter.notifyDataSetChanged();
+                });
+            } catch (Exception e) {
+                showWilayahLoadFailed();
+            }
+        });
+    }
+
+    private void showWilayahLoadFailed() {
+        Handler main = new Handler(Looper.getMainLooper());
+        main.post(() -> {
+            if (getActivity() == null) return;
+            Toast.makeText(getActivity(), R.string.report_wilayah_load_failed, Toast.LENGTH_LONG).show();
+        });
+    }
+
+    private void submitReport(String reportApiUrl, String namaPelapor, String kabKota, String kecamatan, String kelurahan, String kategori, String deskripsi) {
+        if (reportApiUrl.isEmpty()) {
+            Toast.makeText(getActivity(), R.string.report_missing_dashboard_url, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (namaPelapor.isEmpty() || kabKota.isEmpty() || kecamatan.isEmpty() || kelurahan.isEmpty() || kategori.isEmpty() || deskripsi.isEmpty()) {
+            Toast.makeText(getActivity(), R.string.report_invalid_fields, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        final String reportUrl = normalizeReportUrl(reportApiUrl);
+        if (reportUrl.isEmpty()) {
+            Toast.makeText(getActivity(), R.string.report_missing_dashboard_url, Toast.LENGTH_LONG).show();
+            return;
+        }
+        PreferenceManager.getDefaultSharedPreferences(getActivity())
+                .edit()
+                .putString(PREF_LOCAL_REPORT_API_URL, reportUrl)
+                .apply();
+        final long timestamp = System.currentTimeMillis();
+        final String json = buildReportJson(timestamp, namaPelapor, kabKota, kecamatan, kelurahan, kategori, deskripsi);
+
+        REPORT_EXECUTOR.execute(() -> {
+            boolean success = postReport(reportUrl, json);
+            Handler main = new Handler(Looper.getMainLooper());
+            main.post(() -> {
+                if (getActivity() == null) return;
+                Toast.makeText(getActivity(), success ? R.string.report_sent_success : R.string.report_sent_failed, Toast.LENGTH_LONG).show();
+            });
+        });
+    }
+
+    private boolean postReport(String reportUrl, String json) {
+        try {
+            URL url = new URL(reportUrl);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            try {
+                connection.setRequestMethod("POST");
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setDoOutput(true);
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+                byte[] body = json.getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(body.length);
+                try (OutputStream os = connection.getOutputStream()) {
+                    os.write(body);
+                }
+                int response = connection.getResponseCode();
+                return response >= 200 && response < 300;
+            } finally {
+                connection.disconnect();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to send report: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static String deriveReportUrl(String dashboardUrl) {
+        String trimmed = dashboardUrl == null ? "" : dashboardUrl.trim();
+        if (trimmed.endsWith("/location")) {
+            return trimmed.substring(0, trimmed.length() - "/location".length()) + "/report";
+        }
+        if (trimmed.endsWith("/location/")) {
+            return trimmed.substring(0, trimmed.length() - "/location/".length()) + "/report";
+        }
+        if (trimmed.endsWith("/")) {
+            return trimmed + "report";
+        }
+        return trimmed + "/report";
+    }
+
+    private static String normalizeReportUrl(String reportApiUrl) {
+        String trimmed = reportApiUrl == null ? "" : reportApiUrl.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        if (trimmed.endsWith("/report")) {
+            return trimmed;
+        }
+        if (trimmed.endsWith("/location") || trimmed.endsWith("/location/")) {
+            return deriveReportUrl(trimmed);
+        }
+        if (trimmed.endsWith("/")) {
+            return trimmed + "report";
+        }
+        return trimmed + "/report";
+    }
+
+    private static JSONArray fetchJsonArray(String endpointUrl) throws Exception {
+        Exception lastException = null;
+        String fallbackUrl = buildWilayahFallbackUrl(endpointUrl);
+        String[] candidateUrls = fallbackUrl == null
+                ? new String[]{endpointUrl}
+                : new String[]{endpointUrl, fallbackUrl};
+        for (String candidateUrl : candidateUrls) {
+            try {
+                return fetchJsonArrayFromUrl(candidateUrl);
+            } catch (Exception e) {
+                lastException = e;
+                Log.w(TAG, "Failed API wilayah request to " + candidateUrl + ": " + e.getMessage());
+            }
+        }
+        throw lastException != null ? lastException : new IllegalStateException("Unknown API wilayah error");
+    }
+
+    private static String buildWilayahFallbackUrl(String endpointUrl) {
+        String expectedPrefix = API_WILAYAH_BASE_URL + "/";
+        if (endpointUrl == null || !endpointUrl.startsWith(expectedPrefix)) {
+            return null;
+        }
+        String path = endpointUrl.substring(API_WILAYAH_BASE_URL.length());
+        if (path.startsWith("/api/")) {
+            path = path.substring("/api".length());
+        }
+        return API_WILAYAH_FALLBACK_BASE_URL + path;
+    }
+
+    private static JSONArray fetchJsonArrayFromUrl(String endpointUrl) throws Exception {
+        String currentUrl = endpointUrl;
+        for (int redirectCount = 0; redirectCount <= API_WILAYAH_MAX_REDIRECTS; redirectCount++) {
+            URL url = new URL(currentUrl);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            try {
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestMethod("GET");
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("User-Agent", "Mumla-Android");
+                connection.setConnectTimeout(API_WILAYAH_TIMEOUT_MS);
+                connection.setReadTimeout(API_WILAYAH_TIMEOUT_MS);
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode >= 200 && responseCode < 300) {
+                    StringBuilder response = new StringBuilder();
+                    try (InputStream inputStream = connection.getInputStream();
+                         InputStreamReader reader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
+                         BufferedReader bufferedReader = new BufferedReader(reader)) {
+                        String line;
+                        while ((line = bufferedReader.readLine()) != null) {
+                            response.append(line);
+                        }
+                    }
+                    return new JSONArray(response.toString());
+                }
+
+                if (isRedirectStatus(responseCode)) {
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.trim().isEmpty()) {
+                        throw new IllegalStateException("API wilayah redirect without Location header");
+                    }
+                    currentUrl = new URL(url, location).toString();
+                    continue;
+                }
+
+                throw new IllegalStateException("API wilayah responded with HTTP " + responseCode);
+            } finally {
+                connection.disconnect();
+            }
+        }
+        throw new IllegalStateException("API wilayah exceeded max redirects");
+    }
+
+    private static boolean isRedirectStatus(int responseCode) {
+        return responseCode == HttpURLConnection.HTTP_MOVED_PERM
+                || responseCode == HttpURLConnection.HTTP_MOVED_TEMP
+                || responseCode == HttpURLConnection.HTTP_SEE_OTHER
+                || responseCode == 307
+                || responseCode == 308;
+    }
+
+    private static List<WilayahOption> parseWilayahOptions(JSONArray array) {
+        List<WilayahOption> options = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) continue;
+            String id = item.optString("id", "");
+            String name = item.optString("name", "").trim();
+            if (id.isEmpty() || name.isEmpty()) continue;
+            options.add(new WilayahOption(id, name));
+        }
+        return options;
+    }
+
+    private static String buildReportJson(long timestamp, String namaPelapor, String kabKota, String kecamatan, String kelurahan, String kategori, String deskripsi) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"timestamp\":").append(timestamp).append(",");
+        sb.append("\"namaPelapor\":\"").append(escapeJson(namaPelapor)).append("\",");
+        sb.append("\"kabKota\":\"").append(escapeJson(kabKota)).append("\",");
+        sb.append("\"kecamatan\":\"").append(escapeJson(kecamatan)).append("\",");
+        sb.append("\"kelurahan\":\"").append(escapeJson(kelurahan)).append("\",");
+        sb.append("\"kategori\":\"").append(escapeJson(kategori)).append("\",");
+        sb.append("\"deskripsi\":\"").append(escapeJson(deskripsi)).append("\"");
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static class WilayahOption {
+        final String id;
+        final String name;
+
+        WilayahOption(String id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+
+        static WilayahOption placeholder(String name) {
+            return new WilayahOption("", name);
+        }
+
+        boolean hasValidId() {
+            return id != null && !id.trim().isEmpty();
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    private static class WilayahSelectionState {
+        WilayahOption regency;
+        WilayahOption district;
+        WilayahOption village;
+
+        boolean isSelectionValid() {
+            return regency != null && regency.hasValidId()
+                    && district != null && district.hasValidId()
+                    && village != null && village.hasValidId();
+        }
+
+        String getKabKota() {
+            return regency != null ? regency.name : "";
+        }
+
+        String getKecamatan() {
+            return district != null ? district.name : "";
+        }
+
+        String getKelurahan() {
+            return village != null ? village.name : "";
+        }
     }
 
     @Override

@@ -51,7 +51,7 @@
             android:layout_gravity="bottom"
             android:background="?attr/selectableItemBackground"
             android:enabled="false"
-            app:srcCompat="@android:drawable/ic_menu_upload"
+            app:srcCompat="@drawable/ic_action_image"
             app:tint="?android:attr/textColorPrimary" />
 
         <EditText

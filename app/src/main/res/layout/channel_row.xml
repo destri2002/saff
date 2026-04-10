@@ -23,6 +23,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
+    android:minHeight="52dp"
     android:background="?attr/selectableItemBackground">
 
     <ImageView
@@ -30,8 +31,9 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:layout_width="48dp"
         android:layout_height="match_parent"
+        android:layout_gravity="center_vertical"
         app:srcCompat="@drawable/ic_action_collapsed"
-        android:tint="?android:attr/textColorSecondary"
+        android:tint="?attr/colorPrimary"
         android:padding="12dp" />
 
     <TextView
@@ -39,35 +41,52 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:gravity="center_vertical|left"
-        android:minHeight="48dp"
-        android:padding="4dp"
+        android:layout_gravity="center_vertical"
+        android:gravity="center_vertical|start"
+        android:minHeight="52dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:textSize="15sp"
+        android:textStyle="bold"
         android:text="Channel name\nLine 2\nLine 3\nLine 4"/>
 
     <TextView
         android:id="@+id/channel_row_count"
         android:layout_width="wrap_content"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:layout_marginEnd="6dp"
         android:gravity="center"
+        android:minWidth="26dp"
         android:text="10"
+        android:textSize="12sp"
         android:textStyle="bold"
-        android:padding="10dp"/>
+        android:textColor="?attr/colorOnSecondaryContainer"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
+        android:background="@drawable/channel_user_count_badge"/>
 
     <ImageView
         android:id="@+id/channel_row_join"
-        android:layout_width="32dp"
+        android:layout_width="40dp"
         android:layout_height="match_parent"
+        android:layout_gravity="center_vertical"
+        android:padding="8dp"
         app:srcCompat="@drawable/ic_action_move"
         android:tint="?android:attr/textColorSecondary"
         android:background="?attr/selectableItemBackgroundBorderless"/>
 
     <ImageView
         android:id="@+id/channel_row_more"
-        android:layout_width="32dp"
+        android:layout_width="40dp"
         android:layout_height="match_parent"
+        android:layout_gravity="center_vertical"
+        android:padding="8dp"
         app:srcCompat="@drawable/ic_more_vert_black_24dp"
-        android:layout_gravity="center"
-        android:paddingLeft="8dp"
         android:tint="?android:textColorSecondary"
         android:background="?attr/selectableItemBackgroundBorderless"/>
 </LinearLayout>

@@ -91,6 +91,9 @@ public class MumlaService extends HumlaService implements
     private List<IChatMessage> mMessageLog;
     private boolean mSuppressNotifications;
 
+    /** Sends the device location to the Node.js dashboard every {@link Settings#LOCATION_SEND_INTERVAL_MS} ms. */
+    private LocationReporter mLocationReporter;
+
     private TextToSpeech mTTS;
     private TextToSpeech.OnInitListener mTTSInitListener = new TextToSpeech.OnInitListener() {
         @Override
@@ -310,6 +313,8 @@ public class MumlaService extends HumlaService implements
         mMessageLog = new ArrayList<>();
         mMessageNotification = new MumlaMessageNotification(MumlaService.this);
 
+        mLocationReporter = new LocationReporter(this, mSettings);
+
         // Instantiate overlay view
         mChannelOverlay = new MumlaOverlay(this);
         mHotCorner = new MumlaHotCorner(this, mSettings.getHotCornerGravity(), mHotCornerListener);
@@ -347,6 +352,7 @@ public class MumlaService extends HumlaService implements
 
         unregisterObserver(mObserver);
         if(mTTS != null) mTTS.shutdown();
+        if (mLocationReporter != null) mLocationReporter.stop();
         mMessageLog = null;
         mMessageNotification.dismiss();
         super.onDestroy();
@@ -389,6 +395,9 @@ public class MumlaService extends HumlaService implements
         if (mSettings.isHandsetMode()) {
             setProximitySensorOn(true);
         }
+
+        // Start periodic location reporting to the Node.js dashboard.
+        mLocationReporter.start();
     }
 
     @Override
@@ -398,6 +407,9 @@ public class MumlaService extends HumlaService implements
             unregisterReceiver(mTalkReceiver);
         } catch (IllegalArgumentException iae) {
         }
+
+        // Stop periodic location reporting when the connection drops.
+        mLocationReporter.stop();
 
         // Remove overlay if present.
         mChannelOverlay.hide();

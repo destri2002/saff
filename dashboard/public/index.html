@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saff Location Dashboard</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #111827;
+      color: #f3f4f6;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.6rem 1rem;
+      background: #1f2937;
+      border-bottom: 1px solid #374151;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #60a5fa;
+      white-space: nowrap;
+    }
+
+    /* ── Status bar ── */
+    #status-bar {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 0.8rem;
+    }
+
+    .stat {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+
+    .stat label {
+      color: #9ca3af;
+      white-space: nowrap;
+    }
+
+    .stat span {
+      font-weight: 600;
+      color: #e5e7eb;
+      white-space: nowrap;
+    }
+
+    /* Connection indicator */
+    #conn-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      transition: background 0.3s;
+      flex-shrink: 0;
+    }
+    #conn-dot.connected    { background: #22c55e; }
+    #conn-dot.connecting   { background: #f59e0b; }
+
+    /* ── Controls ── */
+    #controls {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 0.3rem 0.75rem;
+      font-size: 0.78rem;
+      border: 1px solid #4b5563;
+      border-radius: 6px;
+      background: #374151;
+      color: #e5e7eb;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    button:hover { background: #4b5563; }
+    button.active { background: #2563eb; border-color: #3b82f6; color: #fff; }
+
+    /* ── Map ── */
+    #map {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* ── "Waiting for location" overlay ── */
+    #no-location-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(17, 24, 39, 0.82);
+      z-index: 1000;
+      text-align: center;
+      padding: 1rem;
+      gap: 0.75rem;
+    }
+    #no-location-overlay.hidden { display: none; }
+    #no-location-overlay p {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+    #no-location-overlay small {
+      color: #9ca3af;
+      font-size: 0.78rem;
+      max-width: 340px;
+      line-height: 1.5;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #374151;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    /* ── Info panel (bottom) ── */
+    #info-panel {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      padding: 0.5rem 1rem;
+      background: #1f2937;
+      border-top: 1px solid #374151;
+      font-size: 0.78rem;
+      flex-shrink: 0;
+    }
+
+    .info-item { color: #9ca3af; }
+    .info-item strong { color: #e5e7eb; }
+
+    /* ── Report panel ── */
+    #report-panel {
+      padding: 0.75rem 1rem 1rem;
+      background: #111827;
+      border-top: 1px solid #374151;
+      display: grid;
+      gap: 0.75rem;
+      flex-shrink: 0;
+      max-height: 45vh;
+      overflow: auto;
+    }
+    #report-panel h2 {
+      margin: 0;
+      font-size: 0.95rem;
+      color: #93c5fd;
+    }
+    #report-form {
+      display: grid;
+      gap: 0.5rem;
+      grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+      align-items: end;
+    }
+    #report-form .field {
+      display: grid;
+      gap: 0.2rem;
+    }
+    #report-form label {
+      font-size: 0.72rem;
+      color: #9ca3af;
+    }
+    #report-form input {
+      width: 100%;
+      border: 1px solid #4b5563;
+      border-radius: 6px;
+      background: #1f2937;
+      color: #f3f4f6;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.8rem;
+    }
+    #report-submit {
+      align-self: stretch;
+      min-width: 110px;
+    }
+    #report-submit:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    #report-status {
+      min-height: 1.1rem;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+    #report-status.error { color: #fca5a5; }
+    #report-status.success { color: #86efac; }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      background: #0f172a;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+    th, td {
+      text-align: left;
+      font-size: 0.78rem;
+      padding: 0.45rem 0.55rem;
+      border-bottom: 1px solid #1f2937;
+      vertical-align: top;
+      color: #e5e7eb;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #1f2937;
+      color: #93c5fd;
+      z-index: 1;
+    }
+    td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    td.amount { text-align: right; }
+
+    @media (max-width: 1024px) {
+      #report-form {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+      }
+      #report-submit {
+        grid-column: span 2;
+      }
+    }
+
+    /* ── Leaflet popup dark style ── */
+    .leaflet-popup-content-wrapper {
+      background: #1f2937;
+      color: #f3f4f6;
+      border: 1px solid #374151;
+    }
+    .leaflet-popup-tip { background: #1f2937; }
+
+    /* ── Pulsing marker for latest position ── */
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(2.0); opacity: 0; }
+    }
+    .pulse-ring {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: rgba(59, 130, 246, 0.5);
+      animation: pulse-ring 1.5s ease-out infinite;
+    }
+    .pulse-dot {
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #3b82f6;
+      border: 2px solid #fff;
+    }
+    .pulse-icon {
+      width: 16px;
+      height: 16px;
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📍 Saff Location Dashboard</h1>
+
+  <div id="status-bar">
+    <div class="stat">
+      <div id="conn-dot" title="WebSocket connection"></div>
+      <label>WS:</label>
+      <span id="conn-label">Connecting…</span>
+    </div>
+    <div class="stat">
+      <label>Last update:</label>
+      <span id="last-update">—</span>
+    </div>
+    <div class="stat">
+      <label>Points:</label>
+      <span id="point-count">0</span>
+    </div>
+    <div class="stat">
+      <label>Accuracy:</label>
+      <span id="accuracy">—</span>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-follow" class="active" title="Keep map centred on latest position">Follow</button>
+    <button id="btn-track" class="active" title="Show the travelled path">Show track</button>
+    <button id="btn-center" title="Jump to latest position">Go to latest</button>
+    <button id="btn-clear" title="Clear track from map">Clear track</button>
+  </div>
+</header>
+
+<div id="map">
+  <div id="no-location-overlay">
+    <div class="spinner"></div>
+    <p>Waiting for location…</p>
+    <small>Make sure the Android app is connected to a Mumble server and the Dashboard URL is set to <code><span id="location-endpoint-example"></span></code></small>
+  </div>
+</div>
+
+<div id="info-panel">
+  <div class="info-item">User: <strong id="username">—</strong></div>
+  <div class="info-item">Lat: <strong id="lat">—</strong></div>
+  <div class="info-item">Lng: <strong id="lng">—</strong></div>
+  <div class="info-item">Accuracy: <strong id="acc-full">—</strong></div>
+  <div class="info-item">Device time: <strong id="dev-time">—</strong></div>
+  <div class="info-item">Server time: <strong id="srv-time">—</strong></div>
+</div>
+
+<section id="report-panel">
+  <h2>Reports</h2>
+  <form id="report-form">
+    <div class="field">
+      <label for="report-timestamp">Timestamp</label>
+      <input id="report-timestamp" type="datetime-local" required />
+    </div>
+    <div class="field">
+      <label for="report-district-city">District/City</label>
+      <input id="report-district-city" type="text" maxlength="120" required />
+    </div>
+    <div class="field">
+      <label for="report-category">Category</label>
+      <input id="report-category" type="text" maxlength="80" required />
+    </div>
+    <div class="field">
+      <label for="report-amount">Amount</label>
+      <input id="report-amount" type="number" min="0" step="0.01" required />
+    </div>
+    <div class="field">
+      <label for="report-description">Description</label>
+      <input id="report-description" type="text" maxlength="500" required />
+    </div>
+    <button id="report-submit" type="submit">Send report</button>
+  </form>
+  <div id="report-status"></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>District/City</th>
+          <th>Category</th>
+          <th>Amount</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody id="report-table-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLI=" crossorigin=""></script>
+<!-- Socket.IO client (served by the server) -->
+<script src="/socket.io/socket.io.js"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Map setup ──────────────────────────────────────────────────────────────
+  const map = L.map('map', {
+    center: [0, 0],
+    zoom: 2,
+    zoomControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 20,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+
+  // Track polyline
+  let trackPoints = [];
+  const trackLine = L.polyline([], { color: '#3b82f6', weight: 3, opacity: 0.8 }).addTo(map);
+
+  // Accuracy circle — added to map only after the first real location arrives
+  const accuracyCircle = L.circle([0, 0], {
+    radius: 0, color: '#3b82f6', fillColor: '#3b82f6',
+    fillOpacity: 0.1, weight: 1,
+  });
+
+  // Latest-position marker (custom pulsing icon) — added to map only after the first real location arrives
+  const pulseIcon = L.divIcon({
+    html: '<div class="pulse-ring"></div><div class="pulse-dot"></div>',
+    className: 'pulse-icon',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+  const posMarker = L.marker([0, 0], { icon: pulseIcon });
+  posMarker.bindPopup('');
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let follow = true;
+  let showTrack = true;
+  let pointCount = 0;
+  let hasLocation = false; // true once the first real fix has been received
+
+  // ── UI elements ───────────────────────────────────────────────────────────
+  const connDot     = document.getElementById('conn-dot');
+  const connLabel   = document.getElementById('conn-label');
+  const lastUpdate  = document.getElementById('last-update');
+  const pointCountEl= document.getElementById('point-count');
+  const accuracyEl  = document.getElementById('accuracy');
+  const usernameEl  = document.getElementById('username');
+  const latEl       = document.getElementById('lat');
+  const lngEl       = document.getElementById('lng');
+  const accFullEl   = document.getElementById('acc-full');
+  const devTimeEl   = document.getElementById('dev-time');
+  const srvTimeEl   = document.getElementById('srv-time');
+  const noLocationOverlay = document.getElementById('no-location-overlay');
+  const reportForm = document.getElementById('report-form');
+  const reportTimestamp = document.getElementById('report-timestamp');
+  const reportDistrictCity = document.getElementById('report-district-city');
+  const reportCategory = document.getElementById('report-category');
+  const reportAmount = document.getElementById('report-amount');
+  const reportDescription = document.getElementById('report-description');
+  const reportSubmit = document.getElementById('report-submit');
+  const reportStatus = document.getElementById('report-status');
+  const reportTableBody = document.getElementById('report-table-body');
+  const locationEndpointExample = document.getElementById('location-endpoint-example');
+
+  const btnFollow  = document.getElementById('btn-follow');
+  const btnTrack   = document.getElementById('btn-track');
+  const btnCenter  = document.getElementById('btn-center');
+  const btnClear   = document.getElementById('btn-clear');
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function formatTime(ms) {
+    if (!ms) return '—';
+    const d = new Date(ms);
+    return d.toLocaleTimeString([], { hour12: false }) + '.' +
+           String(d.getMilliseconds()).padStart(3, '0');
+  }
+
+  function formatDateTime(ms) {
+    if (!ms) return '—';
+    const d = new Date(ms);
+    return d.toLocaleString([], { hour12: false });
+  }
+
+  function setReportStatus(text, kind) {
+    reportStatus.textContent = text || '';
+    reportStatus.classList.remove('error', 'success');
+    if (kind) reportStatus.classList.add(kind);
+  }
+
+  function toLocalDateTimeInputValue(ms) {
+    const d = new Date(ms);
+    const pad = (v) => String(v).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function renderReportRow(report, prepend) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${escapeHtml(formatDateTime(report.timestamp))}</td>
+      <td>${escapeHtml(report.districtCity)}</td>
+      <td>${escapeHtml(report.category)}</td>
+      <td class="amount mono">${escapeHtml(Number(report.amount).toFixed(2))}</td>
+      <td>${escapeHtml(report.description)}</td>
+    `;
+    if (prepend) {
+      reportTableBody.prepend(tr);
+    } else {
+      reportTableBody.appendChild(tr);
+    }
+  }
+
+  function renderReportHistory(history) {
+    reportTableBody.textContent = '';
+    if (!Array.isArray(history)) return;
+    history.forEach((report) => renderReportRow(report, false));
+  }
+
+  function applyPoint(pt, skipFollow) {
+    const latlng = [pt.latitude, pt.longitude];
+
+    // On the first real location: add layers to map and hide the "waiting" overlay
+    if (!hasLocation) {
+      hasLocation = true;
+      posMarker.addTo(map);
+      accuracyCircle.addTo(map);
+      noLocationOverlay.classList.add('hidden');
+    }
+
+    // Move marker & accuracy circle
+    posMarker.setLatLng(latlng);
+    posMarker.getPopup().setContent(
+      `${pt.username ? `<b>${pt.username}</b><br>` : ''}` +
+      `<b>${pt.latitude.toFixed(6)}, ${pt.longitude.toFixed(6)}</b><br>` +
+      `Accuracy: ±${pt.accuracy.toFixed(1)} m<br>` +
+      `Device: ${formatTime(pt.timestamp)}`
+    );
+    accuracyCircle.setLatLng(latlng).setRadius(pt.accuracy);
+
+    // Track
+    trackPoints.push(latlng);
+    if (showTrack) {
+      trackLine.setLatLngs(trackPoints);
+    }
+
+    // Follow (skipped during batch history replay — caller will fitBounds instead)
+    if (follow && !skipFollow) {
+      map.setView(latlng, Math.max(map.getZoom(), 15));
+    }
+
+    // Status bar
+    pointCount++;
+    pointCountEl.textContent = pointCount;
+    lastUpdate.textContent = formatTime(pt.receivedAt || Date.now());
+    accuracyEl.textContent = `±${pt.accuracy.toFixed(1)} m`;
+
+    // Info panel
+    usernameEl.textContent  = pt.username || '—';
+    latEl.textContent      = pt.latitude.toFixed(7);
+    lngEl.textContent      = pt.longitude.toFixed(7);
+    accFullEl.textContent  = `±${pt.accuracy.toFixed(2)} m`;
+    devTimeEl.textContent  = formatTime(pt.timestamp);
+    srvTimeEl.textContent  = pt.receivedAt ? formatTime(pt.receivedAt) : '—';
+  }
+
+  // ── Socket.IO ─────────────────────────────────────────────────────────────
+  const socket = io({ transports: ['websocket', 'polling'] });
+
+  socket.on('connect', () => {
+    connDot.className = 'connected';
+    connLabel.textContent = 'Connected';
+  });
+
+  socket.on('disconnect', () => {
+    connDot.className = '';
+    connLabel.textContent = 'Disconnected';
+  });
+
+  socket.on('connect_error', () => {
+    connDot.className = 'connecting';
+    connLabel.textContent = 'Reconnecting…';
+  });
+
+  // Receive full history on (re)connection
+  socket.on('history', (history) => {
+    // Always reset client-side state on reconnect so stale data is cleared
+    trackPoints = [];
+    pointCount = 0;
+    hasLocation = false;
+    trackLine.setLatLngs([]);
+    pointCountEl.textContent = 0;
+
+    if (map.hasLayer(posMarker)) { posMarker.remove(); }
+    if (map.hasLayer(accuracyCircle)) { accuracyCircle.remove(); }
+    noLocationOverlay.classList.remove('hidden');
+
+    if (!Array.isArray(history) || history.length === 0) return;
+
+    // Replay history without panning for each point (skipFollow=true)
+    history.forEach((pt) => applyPoint(pt, true));
+
+    // After replay, fit map to the full track or follow the last point
+    if (trackPoints.length > 1) {
+      map.fitBounds(L.latLngBounds(trackPoints).pad(0.2));
+    } else if (trackPoints.length === 1 && follow) {
+      map.setView(trackPoints[0], Math.max(map.getZoom(), 15));
+    }
+  });
+
+  // Live location updates
+  socket.on('location', (pt) => {
+    applyPoint(pt);
+  });
+
+  socket.on('reportHistory', (history) => {
+    renderReportHistory(history);
+  });
+
+  socket.on('report', (report) => {
+    renderReportRow(report, true);
+  });
+
+  // ── Button handlers ────────────────────────────────────────────────────────
+  btnFollow.addEventListener('click', () => {
+    follow = !follow;
+    btnFollow.classList.toggle('active', follow);
+  });
+
+  btnTrack.addEventListener('click', () => {
+    showTrack = !showTrack;
+    btnTrack.classList.toggle('active', showTrack);
+    if (showTrack) {
+      trackLine.setLatLngs(trackPoints);
+    } else {
+      trackLine.setLatLngs([]);
+    }
+  });
+
+  btnCenter.addEventListener('click', () => {
+    if (trackPoints.length > 0) {
+      const last = trackPoints[trackPoints.length - 1];
+      map.setView(last, Math.max(map.getZoom(), 15));
+    }
+  });
+
+  btnClear.addEventListener('click', () => {
+    trackPoints = [];
+    trackLine.setLatLngs([]);
+    pointCount = 0;
+    pointCountEl.textContent = 0;
+  });
+
+  reportForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setReportStatus('');
+
+    const timestampValue = reportTimestamp.value;
+    const timestamp = timestampValue ? new Date(timestampValue).getTime() : NaN;
+    const districtCity = reportDistrictCity.value.trim();
+    const category = reportCategory.value.trim();
+    const amount = Number(reportAmount.value);
+    const description = reportDescription.value.trim();
+
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      setReportStatus('Please provide a valid timestamp.', 'error');
+      return;
+    }
+    if (!districtCity || !category || !description || !Number.isFinite(amount) || amount < 0) {
+      setReportStatus('Please fill all fields with valid values.', 'error');
+      return;
+    }
+
+    reportSubmit.disabled = true;
+    try {
+      const response = await fetch('/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timestamp, districtCity, category, amount, description }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.error || `HTTP ${response.status}`);
+      }
+
+      setReportStatus('Report sent.', 'success');
+      reportDescription.value = '';
+      reportAmount.value = '';
+    } catch (error) {
+      setReportStatus(`Failed to send report: ${error.message}`, 'error');
+    } finally {
+      reportSubmit.disabled = false;
+    }
+  });
+
+  reportTimestamp.value = toLocalDateTimeInputValue(Date.now());
+  locationEndpointExample.textContent = `${window.location.origin}/location`;
+  setReportStatus('Tip: adjust timestamp before sending if this is a past event.');
+
+}());
+</script>
+</body>
+</html>

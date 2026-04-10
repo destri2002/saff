@@ -163,6 +163,33 @@
     <string name="invalid_password">Wrong password.</string>
     <string name="send_message">Send message</string>
     <string name="channel_menu_view_description">View Description</string>
+    <string name="menu_create_report">Create Report</string>
+    <string name="create_report_title">Create Report</string>
+    <string name="report_nama_pelapor">Nama Pelapor</string>
+    <string name="report_kab_kota">Kab/Kota</string>
+    <string name="report_kecamatan">Kecamatan</string>
+    <string name="report_kelurahan">Kelurahan</string>
+    <string name="report_kategori">Kategori</string>
+    <string name="report_deskripsi">Deskripsi</string>
+    <string name="report_api_url">Report API URL (e.g. http://server:3000/report)</string>
+    <string name="report_submit">Submit</string>
+    <string name="report_missing_dashboard_url">Report API URL is required.</string>
+    <string name="report_invalid_fields">Please fill all report fields.</string>
+    <string name="report_invalid_wilayah_selection">Kab/Kota, Kecamatan, dan Kelurahan harus dipilih dari hasil pencarian API.</string>
+    <string name="report_wilayah_load_failed">Gagal memuat data wilayah dari API.</string>
+    <string name="report_select_kab_kota">Pilih Kab/Kota</string>
+    <string name="report_select_kecamatan">Pilih Kecamatan</string>
+    <string name="report_select_kelurahan">Pilih Kelurahan</string>
+    <string-array name="report_kategori_options">
+        <item>Meninggal Dunia</item>
+        <item>Luka Berat</item>
+        <item>Luka Ringan</item>
+        <item>Pengungsian</item>
+        <item>Hilang</item>
+        <item>Lainnya</item>
+    </string-array>
+    <string name="report_sent_success">Report sent.</string>
+    <string name="report_sent_failed">Failed to send report.</string>
     <string name="untrusted_certificate">Untrusted Certificate</string>
     <string name="allow">Allow</string>
     <string name="trust_added">Added certificate to trust store</string>
@@ -196,6 +223,7 @@
     <string name="shout_configure">Configure Voice Target</string>
     <string name="grant_perm_microphone">Please grant microphone permission.</string>
     <string name="grant_perm_notifications">Please grant permission to send notifications.</string>
+    <string name="grant_perm_location">Location permission denied. Location updates to the dashboard will be disabled.</string>
     <string name="grant_perm_storage">Please grant external storage permission.</string>
     <string name="grant_perm_draw_over_apps">Please grant permission to display over other apps.</string>
     <string name="orbot_not_installed">The Orbot app is not installed. Not using Tor.</string>
