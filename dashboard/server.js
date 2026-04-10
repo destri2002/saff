@@ -29,6 +29,7 @@ const rateLimit = require('express-rate-limit');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HISTORY_LIMIT = parseInt(process.env.HISTORY_LIMIT || '500', 10);
 const REPORT_HISTORY_LIMIT = parseInt(process.env.REPORT_HISTORY_LIMIT || '500', 10);
+const REPORT_API_SOURCE = 'https://emsifa.github.io/api-wilayah-indonesia';
 
 
 // ---------------------------------------------------------------------------
@@ -54,7 +55,7 @@ function addLocation(point) {
 }
 
 /**
- * @typedef {{ timestamp: number, districtCity: string, category: string, amount: number, description: string, api?: string, receivedAt: number }} ReportRow
+ * @typedef {{ timestamp: number, districtCity: string, category: string, amount: number, description: string, api?: string, namaPelapor?: string, kabKota?: string, kecamatan?: string, kelurahan?: string, receivedAt: number }} ReportRow
  */
 
 /** @type {ReportRow[]} */
@@ -150,18 +151,37 @@ app.post('/location', locationLimiter, (req, res) => {
 function handleReportPost(req, res) {
     const body = req.body || {};
     const { timestamp } = body;
-    const districtCity = typeof body.kabKota === 'string' ? body.kabKota : body.districtCity;
-    const category = typeof body.kategori === 'string' ? body.kategori : body.category;
-    const description = typeof body.deskripsi === 'string' ? body.deskripsi : body.description;
+    const namaPelapor = typeof body.namaPelapor === 'string' ? body.namaPelapor.trim() : '';
+    const kabKota = typeof body.kabKota === 'string' ? body.kabKota : undefined;
+    const kecamatan = typeof body.kecamatan === 'string' ? body.kecamatan : undefined;
+    const kelurahan = typeof body.kelurahan === 'string' ? body.kelurahan : undefined;
+    const kategori = typeof body.kategori === 'string' ? body.kategori : undefined;
+    const deskripsi = typeof body.deskripsi === 'string' ? body.deskripsi : undefined;
+    const districtCity = typeof kabKota === 'string' ? kabKota : body.districtCity;
+    const category = typeof kategori === 'string' ? kategori : body.category;
+    const description = typeof deskripsi === 'string' ? deskripsi : body.description;
     const amount = (typeof body.amount === 'number' && Number.isFinite(body.amount) && body.amount >= 0)
         ? body.amount
         : 0;
-    const api = (typeof body.api === 'string' && body.api.trim().length > 0)
-        ? body.api.trim().slice(0, 200)
-        : undefined;
+    const hasNewAndroidShape = [kabKota, kecamatan, kelurahan, kategori, deskripsi].some((value) => typeof value === 'string');
+    const api = hasNewAndroidShape ? REPORT_API_SOURCE : undefined;
 
     if (typeof timestamp !== 'number' || !Number.isFinite(timestamp) || timestamp <= 0) {
         return res.status(400).json({ error: 'Invalid timestamp. Expected a positive number (epoch ms).' });
+    }
+    if (hasNewAndroidShape) {
+        if (!namaPelapor) {
+            return res.status(400).json({ error: 'Invalid namaPelapor. Expected a non-empty string.' });
+        }
+        if (typeof kabKota !== 'string' || kabKota.trim().length === 0) {
+            return res.status(400).json({ error: 'Invalid kabKota. Expected a non-empty string.' });
+        }
+        if (typeof kecamatan !== 'string' || kecamatan.trim().length === 0) {
+            return res.status(400).json({ error: 'Invalid kecamatan. Expected a non-empty string.' });
+        }
+        if (typeof kelurahan !== 'string' || kelurahan.trim().length === 0) {
+            return res.status(400).json({ error: 'Invalid kelurahan. Expected a non-empty string.' });
+        }
     }
     if (typeof districtCity !== 'string' || districtCity.trim().length === 0) {
         return res.status(400).json({ error: 'Invalid district/city. Expected a non-empty string.' });
@@ -181,6 +201,10 @@ function handleReportPost(req, res) {
         amount,
         description: description.trim().slice(0, 500),
         api,
+        namaPelapor: namaPelapor ? namaPelapor.slice(0, 120) : undefined,
+        kabKota: typeof kabKota === 'string' ? kabKota.trim().slice(0, 120) : undefined,
+        kecamatan: typeof kecamatan === 'string' ? kecamatan.trim().slice(0, 120) : undefined,
+        kelurahan: typeof kelurahan === 'string' ? kelurahan.trim().slice(0, 120) : undefined,
         receivedAt: Date.now(),
     };
     addReport(report);
@@ -196,7 +220,8 @@ function handleReportPost(req, res) {
  * Both endpoints are aliases and handled by the same logic.
  * Receives one report row.
  * Body (legacy): { timestamp, districtCity, category, amount, description }
- * Body (android): { timestamp, api, kabKota, kategori, deskripsi }
+ * Body (android): { timestamp, namaPelapor, kabKota, kecamatan, kelurahan, kategori, deskripsi, api }
+ * Field `api` is static on server side and not used for display.
  */
 app.post('/report', reportLimiter, handleReportPost);
 app.post('/api/report', reportLimiter, handleReportPost);

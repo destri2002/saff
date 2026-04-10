@@ -72,7 +72,7 @@ public class LocationReporter {
     private static final String API_WILAYAH_REGENCIES_URL_TEMPLATE = REPORT_API_SOURCE + "/api/regencies/%s.json";
     // Cache for 10 minutes to reduce API requests while keeping region names reasonably fresh.
     private static final long API_REGION_CACHE_TTL_MS = 10 * 60 * 1000L;
-    private static final String REPORT_DISTRICT_CITY_UNKNOWN = "Unknown";
+    private static final String REPORT_WILAYAH_UNKNOWN = "Unknown";
 
     private final Context mContext;
     private final Settings mSettings;
@@ -275,14 +275,15 @@ public class LocationReporter {
     }
 
     private String buildReportJson(Location location, String username) {
-        String districtCity = resolveDistrictCity(location);
-        String kabKota = resolveKabKotaFromApi(location, districtCity);
+        Address address = reverseGeocode(location);
+        String kabKotaFallback = resolveDistrictCity(location, address);
+        String kabKota = resolveKabKotaFromApi(location, kabKotaFallback);
+        String kecamatan = resolveKecamatan(address);
+        String kelurahan = resolveKelurahan(address);
+        String namaPelapor = resolveNamaPelapor(username);
         String category = REPORT_CATEGORY_LOCATION_UPDATE;
 
         StringBuilder description = new StringBuilder();
-        if (username != null && !username.isEmpty()) {
-            description.append(username.trim()).append(" ");
-        }
         description.append("at ")
                 .append(String.format(Locale.US, "%.6f", location.getLatitude()))
                 .append(", ")
@@ -294,8 +295,11 @@ public class LocationReporter {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         sb.append("\"timestamp\":").append(location.getTime()).append(",");
+        sb.append("\"namaPelapor\":\"").append(escapeJson(namaPelapor)).append("\",");
         sb.append("\"api\":\"").append(escapeJson(REPORT_API_SOURCE)).append("\",");
         sb.append("\"kabKota\":\"").append(escapeJson(kabKota)).append("\",");
+        sb.append("\"kecamatan\":\"").append(escapeJson(kecamatan)).append("\",");
+        sb.append("\"kelurahan\":\"").append(escapeJson(kelurahan)).append("\",");
         sb.append("\"kategori\":\"").append(escapeJson(category)).append("\",");
         sb.append("\"deskripsi\":\"").append(escapeJson(description.toString())).append("\"");
         sb.append("}");
@@ -344,8 +348,7 @@ public class LocationReporter {
         }
     }
 
-    private String resolveDistrictCity(Location location) {
-        Address address = reverseGeocode(location);
+    private String resolveDistrictCity(Location location, Address address) {
         if (address != null) {
             String district = firstNonEmpty(address.getSubAdminArea(), address.getLocality(), address.getAdminArea());
             String city = firstNonEmpty(address.getLocality(), address.getSubAdminArea(), address.getAdminArea(), address.getCountryName());
@@ -361,7 +364,47 @@ public class LocationReporter {
         if (provider != null && !provider.trim().isEmpty()) {
             return provider.trim();
         }
-        return REPORT_DISTRICT_CITY_UNKNOWN;
+        return REPORT_WILAYAH_UNKNOWN;
+    }
+
+    private String resolveKecamatan(Address address) {
+        if (address != null) {
+            String kecamatan = firstNonEmpty(
+                    address.getSubLocality(),
+                    address.getLocality(),
+                    address.getSubAdminArea(),
+                    address.getAdminArea());
+            if (kecamatan != null) {
+                return kecamatan;
+            }
+        }
+        return REPORT_WILAYAH_UNKNOWN;
+    }
+
+    private String resolveKelurahan(Address address) {
+        if (address != null) {
+            String kelurahan = firstNonEmpty(
+                    address.getFeatureName(),
+                    address.getSubThoroughfare(),
+                    address.getThoroughfare(),
+                    address.getSubLocality(),
+                    address.getLocality());
+            if (kelurahan != null) {
+                return kelurahan;
+            }
+        }
+        return REPORT_WILAYAH_UNKNOWN;
+    }
+
+    private String resolveNamaPelapor(String username) {
+        if (username == null) {
+            return REPORT_WILAYAH_UNKNOWN;
+        }
+        String trimmed = username.trim();
+        if (trimmed.isEmpty()) {
+            return REPORT_WILAYAH_UNKNOWN;
+        }
+        return trimmed;
     }
 
     private static String firstNonEmpty(String... values) {
