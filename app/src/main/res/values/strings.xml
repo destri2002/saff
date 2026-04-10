@@ -177,6 +177,9 @@
     <string name="report_invalid_fields">Please fill all report fields.</string>
     <string name="report_invalid_wilayah_selection">Kab/Kota, Kecamatan, dan Kelurahan harus dipilih dari hasil pencarian API.</string>
     <string name="report_wilayah_load_failed">Gagal memuat data wilayah dari API.</string>
+    <string name="report_select_kab_kota">Pilih Kab/Kota</string>
+    <string name="report_select_kecamatan">Pilih Kecamatan</string>
+    <string name="report_select_kelurahan">Pilih Kelurahan</string>
     <string name="report_sent_success">Report sent.</string>
     <string name="report_sent_failed">Failed to send report.</string>
     <string name="untrusted_certificate">Untrusted Certificate</string>

@@ -22,8 +22,6 @@ import android.content.res.TypedArray;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
@@ -37,7 +35,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.ArrayAdapter;
-import android.widget.AutoCompleteTextView;
+import android.widget.AdapterView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -281,9 +280,9 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         View dialogView = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_create_report, null);
         final EditText reportApiUrlField = dialogView.findViewById(R.id.report_api_url);
         final EditText namaPelaporField = dialogView.findViewById(R.id.report_nama_pelapor);
-        final AutoCompleteTextView kabKotaField = dialogView.findViewById(R.id.report_kab_kota);
-        final AutoCompleteTextView kecamatanField = dialogView.findViewById(R.id.report_kecamatan);
-        final AutoCompleteTextView kelurahanField = dialogView.findViewById(R.id.report_kelurahan);
+        final Spinner kabKotaField = dialogView.findViewById(R.id.report_kab_kota);
+        final Spinner kecamatanField = dialogView.findViewById(R.id.report_kecamatan);
+        final Spinner kelurahanField = dialogView.findViewById(R.id.report_kelurahan);
         final EditText kategoriField = dialogView.findViewById(R.id.report_kategori);
         final EditText deskripsiField = dialogView.findViewById(R.id.report_deskripsi);
         reportApiUrlField.setText(getInitialReportApiUrl());
@@ -295,12 +294,12 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
                 .setPositiveButton(R.string.report_submit, (dialog, which) -> {
                     String reportApiUrl = reportApiUrlField.getText().toString().trim();
                     String namaPelapor = namaPelaporField.getText().toString().trim();
-                    String kabKota = kabKotaField.getText().toString().trim();
-                    String kecamatan = kecamatanField.getText().toString().trim();
-                    String kelurahan = kelurahanField.getText().toString().trim();
+                    String kabKota = wilayahState.getKabKota();
+                    String kecamatan = wilayahState.getKecamatan();
+                    String kelurahan = wilayahState.getKelurahan();
                     String kategori = kategoriField.getText().toString().trim();
                     String deskripsi = deskripsiField.getText().toString().trim();
-                    if (!wilayahState.isSelectionValid(kabKota, kecamatan, kelurahan)) {
+                    if (!wilayahState.isSelectionValid()) {
                         Toast.makeText(getActivity(), R.string.report_invalid_wilayah_selection, Toast.LENGTH_LONG).show();
                         return;
                     }
@@ -320,88 +319,99 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         return deriveReportUrl(dashboardUrl);
     }
 
-    private WilayahSelectionState setupWilayahSearch(AutoCompleteTextView kabKotaField, AutoCompleteTextView kecamatanField, AutoCompleteTextView kelurahanField) {
+    private WilayahSelectionState setupWilayahSearch(Spinner kabKotaField, Spinner kecamatanField, Spinner kelurahanField) {
         WilayahSelectionState state = new WilayahSelectionState();
 
-        ArrayAdapter<WilayahOption> kabKotaAdapter = new ArrayAdapter<>(getActivity(), android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
-        ArrayAdapter<WilayahOption> kecamatanAdapter = new ArrayAdapter<>(getActivity(), android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
-        ArrayAdapter<WilayahOption> kelurahanAdapter = new ArrayAdapter<>(getActivity(), android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
+        final String kabPlaceholder = getString(R.string.report_select_kab_kota);
+        final String kecPlaceholder = getString(R.string.report_select_kecamatan);
+        final String kelPlaceholder = getString(R.string.report_select_kelurahan);
+
+        ArrayAdapter<WilayahOption> kabKotaAdapter = createWilayahSpinnerAdapter(kabPlaceholder);
+        ArrayAdapter<WilayahOption> kecamatanAdapter = createWilayahSpinnerAdapter(kecPlaceholder);
+        ArrayAdapter<WilayahOption> kelurahanAdapter = createWilayahSpinnerAdapter(kelPlaceholder);
         kabKotaField.setAdapter(kabKotaAdapter);
         kecamatanField.setAdapter(kecamatanAdapter);
         kelurahanField.setAdapter(kelurahanAdapter);
         kecamatanField.setEnabled(false);
         kelurahanField.setEnabled(false);
 
-        kabKotaField.setOnItemClickListener((parent, view, position, id) -> {
-            WilayahOption selected = kabKotaAdapter.getItem(position);
-            state.regency = selected;
-            state.district = null;
-            state.village = null;
-            kecamatanField.setText("");
-            kelurahanField.setText("");
-            kecamatanAdapter.clear();
-            kelurahanAdapter.clear();
-            kelurahanField.setEnabled(false);
-            if (selected == null) return;
-            kecamatanField.setEnabled(true);
-            loadDistrictsByRegency(selected.id, kecamatanAdapter);
-        });
-
-        kecamatanField.setOnItemClickListener((parent, view, position, id) -> {
-            WilayahOption selected = kecamatanAdapter.getItem(position);
-            state.district = selected;
-            state.village = null;
-            kelurahanField.setText("");
-            kelurahanAdapter.clear();
-            if (selected == null) return;
-            kelurahanField.setEnabled(true);
-            loadVillagesByDistrict(selected.id, kelurahanAdapter);
-        });
-
-        kelurahanField.setOnItemClickListener((parent, view, position, id) -> state.village = kelurahanAdapter.getItem(position));
-
-        kabKotaField.addTextChangedListener(new SimpleFieldWatcher() {
+        kabKotaField.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
-            public void afterTextChanged(Editable s) {
-                if (state.regency != null && !state.regency.name.equals(s.toString().trim())) {
-                    state.regency = null;
-                    state.district = null;
-                    state.village = null;
-                    kecamatanField.setText("");
-                    kelurahanField.setText("");
-                    kecamatanAdapter.clear();
-                    kelurahanAdapter.clear();
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                WilayahOption selected = kabKotaAdapter.getItem(position);
+                state.regency = selected != null && selected.hasValidId() ? selected : null;
+                state.district = null;
+                state.village = null;
+                resetSpinner(kecamatanField, kecamatanAdapter, kecPlaceholder);
+                resetSpinner(kelurahanField, kelurahanAdapter, kelPlaceholder);
+                kelurahanField.setEnabled(false);
+                if (state.regency == null) {
                     kecamatanField.setEnabled(false);
-                    kelurahanField.setEnabled(false);
+                    return;
                 }
+                kecamatanField.setEnabled(true);
+                loadDistrictsByRegency(state.regency.id, kecamatanAdapter, kecPlaceholder);
             }
-        });
-        kecamatanField.addTextChangedListener(new SimpleFieldWatcher() {
+
             @Override
-            public void afterTextChanged(Editable s) {
-                if (state.district != null && !state.district.name.equals(s.toString().trim())) {
-                    state.district = null;
-                    state.village = null;
-                    kelurahanField.setText("");
-                    kelurahanAdapter.clear();
-                    kelurahanField.setEnabled(false);
-                }
-            }
-        });
-        kelurahanField.addTextChangedListener(new SimpleFieldWatcher() {
-            @Override
-            public void afterTextChanged(Editable s) {
-                if (state.village != null && !state.village.name.equals(s.toString().trim())) {
-                    state.village = null;
-                }
+            public void onNothingSelected(AdapterView<?> parent) {
+                state.regency = null;
             }
         });
 
-        loadRegencies(kabKotaAdapter);
+        kecamatanField.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                WilayahOption selected = kecamatanAdapter.getItem(position);
+                state.district = selected != null && selected.hasValidId() ? selected : null;
+                state.village = null;
+                resetSpinner(kelurahanField, kelurahanAdapter, kelPlaceholder);
+                if (state.district == null) {
+                    kelurahanField.setEnabled(false);
+                    return;
+                }
+                kelurahanField.setEnabled(true);
+                loadVillagesByDistrict(state.district.id, kelurahanAdapter, kelPlaceholder);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                state.district = null;
+            }
+        });
+
+        kelurahanField.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                WilayahOption selected = kelurahanAdapter.getItem(position);
+                state.village = selected != null && selected.hasValidId() ? selected : null;
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                state.village = null;
+            }
+        });
+
+        loadRegencies(kabKotaAdapter, kabPlaceholder);
         return state;
     }
 
-    private void loadRegencies(ArrayAdapter<WilayahOption> kabKotaAdapter) {
+    private ArrayAdapter<WilayahOption> createWilayahSpinnerAdapter(String placeholderLabel) {
+        ArrayAdapter<WilayahOption> adapter = new ArrayAdapter<>(getActivity(), android.R.layout.simple_spinner_item, new ArrayList<>());
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        adapter.add(WilayahOption.placeholder(placeholderLabel));
+        return adapter;
+    }
+
+    private void resetSpinner(Spinner spinner, ArrayAdapter<WilayahOption> adapter, String placeholderLabel) {
+        adapter.clear();
+        adapter.add(WilayahOption.placeholder(placeholderLabel));
+        adapter.notifyDataSetChanged();
+        spinner.setSelection(0, false);
+    }
+
+    private void loadRegencies(ArrayAdapter<WilayahOption> kabKotaAdapter, String placeholderLabel) {
         REPORT_EXECUTOR.execute(() -> {
             try {
                 List<WilayahOption> regencies = new ArrayList<>();
@@ -419,6 +429,7 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
                 main.post(() -> {
                     if (getActivity() == null) return;
                     kabKotaAdapter.clear();
+                    kabKotaAdapter.add(WilayahOption.placeholder(placeholderLabel));
                     kabKotaAdapter.addAll(regencies);
                     kabKotaAdapter.notifyDataSetChanged();
                 });
@@ -428,7 +439,7 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         });
     }
 
-    private void loadDistrictsByRegency(String regencyId, ArrayAdapter<WilayahOption> kecamatanAdapter) {
+    private void loadDistrictsByRegency(String regencyId, ArrayAdapter<WilayahOption> kecamatanAdapter, String placeholderLabel) {
         if (regencyId == null || !regencyId.matches("\\d{1,8}")) return;
         REPORT_EXECUTOR.execute(() -> {
             try {
@@ -438,6 +449,7 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
                 main.post(() -> {
                     if (getActivity() == null) return;
                     kecamatanAdapter.clear();
+                    kecamatanAdapter.add(WilayahOption.placeholder(placeholderLabel));
                     kecamatanAdapter.addAll(districts);
                     kecamatanAdapter.notifyDataSetChanged();
                 });
@@ -447,7 +459,7 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         });
     }
 
-    private void loadVillagesByDistrict(String districtId, ArrayAdapter<WilayahOption> kelurahanAdapter) {
+    private void loadVillagesByDistrict(String districtId, ArrayAdapter<WilayahOption> kelurahanAdapter, String placeholderLabel) {
         if (districtId == null || !districtId.matches("\\d{1,12}")) return;
         REPORT_EXECUTOR.execute(() -> {
             try {
@@ -457,6 +469,7 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
                 main.post(() -> {
                     if (getActivity() == null) return;
                     kelurahanAdapter.clear();
+                    kelurahanAdapter.add(WilayahOption.placeholder(placeholderLabel));
                     kelurahanAdapter.addAll(villages);
                     kelurahanAdapter.notifyDataSetChanged();
                 });
@@ -632,6 +645,14 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
             this.name = name;
         }
 
+        static WilayahOption placeholder(String name) {
+            return new WilayahOption("", name);
+        }
+
+        boolean hasValidId() {
+            return id != null && !id.trim().isEmpty();
+        }
+
         @Override
         public String toString() {
             return name;
@@ -643,23 +664,22 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
         WilayahOption district;
         WilayahOption village;
 
-        boolean isSelectionValid(String kabKota, String kecamatan, String kelurahan) {
-            return regency != null
-                    && district != null
-                    && village != null
-                    && regency.name.equals(kabKota)
-                    && district.name.equals(kecamatan)
-                    && village.name.equals(kelurahan);
-        }
-    }
-
-    private abstract static class SimpleFieldWatcher implements TextWatcher {
-        @Override
-        public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+        boolean isSelectionValid() {
+            return regency != null && regency.hasValidId()
+                    && district != null && district.hasValidId()
+                    && village != null && village.hasValidId();
         }
 
-        @Override
-        public void onTextChanged(CharSequence s, int start, int before, int count) {
+        String getKabKota() {
+            return regency != null ? regency.name : "";
+        }
+
+        String getKecamatan() {
+            return district != null ? district.name : "";
+        }
+
+        String getKelurahan() {
+            return village != null ? village.name : "";
         }
     }
 
