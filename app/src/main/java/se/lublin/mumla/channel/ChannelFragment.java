@@ -85,10 +85,11 @@ public class ChannelFragment extends HumlaServiceFragment implements SharedPrefe
     private static final String TAG = ChannelFragment.class.getName();
     private static final ExecutorService REPORT_EXECUTOR = Executors.newSingleThreadExecutor();
     private static final String PREF_LOCAL_REPORT_API_URL = "channel_report_api_url";
-    private static final String API_WILAYAH_PROVINCES_URL = "https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json";
-    private static final String API_WILAYAH_REGENCIES_URL_TEMPLATE = "https://www.emsifa.com/api-wilayah-indonesia/api/regencies/%s.json";
-    private static final String API_WILAYAH_DISTRICTS_URL_TEMPLATE = "https://www.emsifa.com/api-wilayah-indonesia/api/districts/%s.json";
-    private static final String API_WILAYAH_VILLAGES_URL_TEMPLATE = "https://www.emsifa.com/api-wilayah-indonesia/api/villages/%s.json";
+    private static final String API_WILAYAH_BASE_URL = "https://emsifa.github.io/api-wilayah-indonesia";
+    private static final String API_WILAYAH_PROVINCES_URL = API_WILAYAH_BASE_URL + "/api/provinces.json";
+    private static final String API_WILAYAH_REGENCIES_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/regencies/%s.json";
+    private static final String API_WILAYAH_DISTRICTS_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/districts/%s.json";
+    private static final String API_WILAYAH_VILLAGES_URL_TEMPLATE = API_WILAYAH_BASE_URL + "/api/villages/%s.json";
 
     private ViewPager mViewPager;
     private PagerTabStrip mTabStrip;
