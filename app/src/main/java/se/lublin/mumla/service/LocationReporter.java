@@ -404,6 +404,9 @@ public class LocationReporter {
     }
 
     private String findRegencyName(String provinceId, String cityName) throws Exception {
+        if (provinceId == null || !provinceId.matches("\\d{1,4}")) {
+            return null;
+        }
         String endpointUrl = String.format(Locale.US, API_WILAYAH_REGENCIES_URL_TEMPLATE, provinceId);
         JSONArray regencies = fetchJsonArray(endpointUrl);
         for (int i = 0; i < regencies.length(); i++) {
